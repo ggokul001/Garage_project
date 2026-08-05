@@ -5,29 +5,33 @@ type BrandLogoProps = {
   tagline?: boolean;
 };
 
-const brandAsset=(file:string)=>`${import.meta.env.BASE_URL}brand/${file}`;
+const originalLogoUrl = `${import.meta.env.BASE_URL}brand/ara-garage-original.jpeg`;
 
 export function BrandMark({ className = '', inverted = false }: Pick<BrandLogoProps, 'className' | 'inverted'>) {
   return (
     <span
       aria-hidden="true"
-      className={`brand-emblem ${inverted ? 'is-inverted' : ''} ${className}`}
+      className={`brand-source-mark ${inverted ? 'is-inverted' : ''} ${className}`}
     >
-      <img className="brand-emblem-image" src={brandAsset('ara-garage-mark-exact.png')} alt="" />
+      <img src={originalLogoUrl} alt="" />
     </span>
   );
 }
 
 export function BrandLogo({ className = '', compact = false, inverted = false, tagline = true }: BrandLogoProps) {
+  // The compact view only crops the original image at display time. The source file is never altered.
+  if (compact) return <BrandMark className={className} inverted={inverted} />;
+
   return (
-    <span className={`brand-logo ${inverted ? 'is-inverted' : ''} ${compact ? 'is-compact' : ''} ${className}`} aria-label="Ara Garage">
-      <BrandMark inverted={inverted} />
-      {!compact && (
-        <span className="brand-copy">
-          <span className="brand-name"><span className="brand-ara">Ara</span><span className="brand-garage">Garage</span></span>
-          {tagline && <span className="brand-tagline">Digital Garage Management Platform</span>}
-        </span>
-      )}
+    <span
+      className={`brand-logo ${inverted ? 'is-inverted' : ''} ${className}`}
+      aria-label={tagline ? 'Ara Garage — Digital Garage Management Platform' : 'Ara Garage'}
+    >
+      <img
+        className="brand-source-full"
+        src={originalLogoUrl}
+        alt={tagline ? 'Ara Garage — Digital Garage Management Platform' : 'Ara Garage'}
+      />
     </span>
   );
 }
