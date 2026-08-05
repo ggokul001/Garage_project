@@ -6,7 +6,7 @@ export type ListResponse = { data: RecordData[]; meta: { page: number; pageSize:
 
 const client = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL||'/api/v1', timeout: 15000 });
 client.interceptors.request.use((config) => {
-  const token=localStorage.getItem('accura.token');
+  const token=localStorage.getItem('ara-garage.token');
   if(token) config.headers.Authorization=`Bearer ${token}`;
   return config;
 });

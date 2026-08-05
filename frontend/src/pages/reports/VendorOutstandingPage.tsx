@@ -44,7 +44,7 @@ export function VendorOutstandingPage() {
   const [from, setFrom] = useState(new Date().toISOString().slice(0, 8) + '01');
   const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
   const range = useMemo(() => rangeFor(mode, from, to), [mode, from, to]);
-  const columns = useReportColumns('accura.report.columns.vendor-outstanding', availableColumns);
+  const columns = useReportColumns('ara-garage.report.columns.vendor-outstanding', availableColumns);
   const report = useQuery({
     queryKey: ['vendor-outstanding', fy, mode, range.from, range.to],
     queryFn: () => transactionApi.vendorOutstanding({ financial_year_id: fy, from: range.from, to: range.to }),

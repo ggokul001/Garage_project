@@ -1,4 +1,6 @@
-# ara-garage
+# Ara Garage
+
+Digital Garage Management Platform
 
 
 

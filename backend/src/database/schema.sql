@@ -140,8 +140,10 @@ CREATE TABLE IF NOT EXISTS vendors (
 ALTER TABLE vendors ADD COLUMN IF NOT EXISTS gst_type ENUM('WITH_GST','WITHOUT_GST') NOT NULL DEFAULT 'WITH_GST' AFTER gstin;
 
 INSERT INTO companies (code, name, legal_name)
-SELECT 'COM-001', 'Accura Trucking Services', 'Accura Trucking Services'
+SELECT 'COM-001', 'Ara Garage', 'Ara Garage'
 WHERE NOT EXISTS (SELECT 1 FROM companies);
+
+UPDATE companies SET name='Ara Garage', legal_name='Ara Garage' WHERE code='COM-001';
 
 INSERT INTO branches (company_id, code, name, is_head_office)
 SELECT id, 'BR-001', 'Head Office', 1 FROM companies

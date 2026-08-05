@@ -27,7 +27,7 @@ async function migrate() {
   const passwordHash = await bcrypt.hash('Admin@123', env.bcryptRounds);
   await connection.execute(
     `INSERT INTO users (username,email,full_name,password_hash,role_id,branch_id,status)
-     SELECT 'admin','admin@accura.local','System Administrator',?,r.id,b.id,'active'
+     SELECT 'admin','admin@aragarage.local','System Administrator',?,r.id,b.id,'active'
      FROM roles r LEFT JOIN branches b ON b.is_head_office=1
      WHERE r.code='ADMIN' AND NOT EXISTS (SELECT 1 FROM users WHERE username='admin') LIMIT 1`,
     [passwordHash],

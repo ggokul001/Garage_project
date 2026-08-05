@@ -1,5 +1,5 @@
 {
-  "name": "accura-trucking-services",
+  "name": "ara-garage",
   "private": true,
   "workspaces": ["frontend", "backend"],
   "scripts": {

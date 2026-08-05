@@ -13,7 +13,14 @@ import { auditMiddleware } from './middleware/audit';
 
 export const app = express();
 app.use(helmet());
-app.use(cors({ origin: env.corsOrigin }));
+const configuredOrigins=new Set([...env.corsOrigins,env.frontendUrl.replace(/\/$/,'')]);
+const localDevelopmentHosts=new Set(['localhost','127.0.0.1','[::1]','::1']);
+export const isCorsOriginAllowed=(origin?:string)=>{
+  if(!origin||configuredOrigins.has('*')||configuredOrigins.has(origin.replace(/\/$/,'')))return true;
+  if(env.nodeEnv==='production')return false;
+  try{return localDevelopmentHosts.has(new URL(origin).hostname)}catch{return false}
+};
+app.use(cors({origin:(origin,callback)=>callback(null,isCorsOriginAllowed(origin))}));
 app.use(express.json({ limit: '1mb' }));
 app.use(auditMiddleware);
 app.get(`${env.apiPrefix}/health`, (_req, res) => res.json({ status: 'ok' }));

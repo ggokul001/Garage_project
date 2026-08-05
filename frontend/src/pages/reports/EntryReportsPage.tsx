@@ -23,7 +23,7 @@ export function EntryReportsPage(){
   const report=useQuery({queryKey:['entry-report',type,params],queryFn:()=>reportApi.entryReport(type,params),enabled:!!fy});
   const rows=report.data?.data??[];
   const available=useMemo(()=>Object.keys(rows[0]??{}).map(key=>({key,label:friendlyColumn(key)})),[rows]);
-  const columnState=useReportColumns(`accura.report.columns.${type}`,available);
+  const columnState=useReportColumns(`ara-garage.report.columns.${type}`,available);
   const statuses=statusOptions[type];
   const clear=()=>{setSearch('');setFrom('');setTo('');setBranch('');setVendor('');setStatus('')};
   return <div><PageTitle title="Entry Reports" subtitle="Live operational reports with advanced filters and adjustable columns" icon={FileBarChart} action={<div className="flex gap-2"><ReportColumnManager columns={columnState.columns} visible={columnState.visible} toggle={columnState.toggle} move={columnState.move} reorder={columnState.reorder} reset={columnState.reset}/>{has('ENTRY_REPORT_EXPORT')&&<button className="btn-primary" disabled={!rows.length||!columnState.shown.length} onClick={()=>exportCsv(`${type}-report`,rows,columnState.shown)}><Download size={15}/>Excel Download</button>}</div>}/>

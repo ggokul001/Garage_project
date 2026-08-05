@@ -43,7 +43,7 @@ await copyFile(path.join(distDir, 'migrate-production.js'), path.join(production
 await copyFile(path.join(distDir, 'database', 'schema.sql'), path.join(productionDir, 'dist', 'database', 'schema.sql'));
 
 const productionPackage = {
-  name: 'accura-trucking-backend',
+  name: 'ara-garage-backend',
   version: '1.0.0',
   private: true,
   engines: { node: '>=22' },
@@ -63,7 +63,7 @@ try {
 }
 
 await writeFile(path.join(productionDir, 'UPLOAD_THIS_FOLDER.txt'), [
-  'Upload all contents of this folder to /home/appsdemo/accura-backend.',
+  'Upload all contents of this folder to /home/appsdemo/ara-garage-backend.',
   'No node_modules or server-side npm install is required.',
   'Webuzo startup file: dist/server.js',
   'Webuzo start command: npm start',

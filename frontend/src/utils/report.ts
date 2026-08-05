@@ -17,7 +17,7 @@ export function exportExcel(filename: string, rows: Record<string, unknown>[], c
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;');
-  const table = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"><style>table{border-collapse:collapse;font-family:Calibri,sans-serif;font-size:11pt}th{background:#0e2f76;color:#fff;font-weight:bold}th,td{border:1px solid #b7c7df;padding:6px 10px;white-space:nowrap}tr:nth-child(even){background:#f1f5fb}</style></head><body><table><thead><tr>${columns.map((column) => `<th>${escape(column.label)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${columns.map((column) => `<td>${escape(row[column.key])}</td>`).join('')}</tr>`).join('')}</tbody></table></body></html>`;
+  const table = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"><style>table{border-collapse:collapse;font-family:Calibri,sans-serif;font-size:11pt}th{background:#082a56;color:#fff;font-weight:bold}th,td{border:1px solid #e2a47d;padding:6px 10px;white-space:nowrap}tr:nth-child(even){background:#fff7ed}</style></head><body><table><thead><tr>${columns.map((column) => `<th>${escape(column.label)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${columns.map((column) => `<td>${escape(row[column.key])}</td>`).join('')}</tr>`).join('')}</tbody></table></body></html>`;
   const blob = new Blob(['\ufeff', table], { type: 'application/vnd.ms-excel' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');

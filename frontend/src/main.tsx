@@ -30,12 +30,13 @@ import { PayrollPage } from './pages/payroll/PayrollPage';
 import { ThemeProvider } from './ThemeProvider';
 import { useAuth } from './authStore';
 import { enableNumericTextInputs } from './numericTextInputs';
+import { BrandMark } from './components/BrandLogo';
 import './styles.css';
 
 enableNumericTextInputs();
 const client=new QueryClient({defaultOptions:{queries:{retry:1,refetchOnWindowFocus:false}}});
 
-function Protected(){const token=useAuth(s=>s.token),ready=useAuth(s=>s.ready),restore=useAuth(s=>s.restore);useEffect(()=>{restore()},[restore]);if(!ready)return <div className="app-loading"><div className="brand-mark">A</div><span>Loading workspace…</span></div>;return token?<Layout/>:<Navigate to="/login" replace/>}
+function Protected(){const token=useAuth(s=>s.token),ready=useAuth(s=>s.ready),restore=useAuth(s=>s.restore);useEffect(()=>{restore()},[restore]);if(!ready)return <div className="app-loading"><BrandMark/><span>Loading Ara Garage workspace…</span></div>;return token?<Layout/>:<Navigate to="/login" replace/>}
 function PermissionRoute({permission,children}:{permission:string;children:React.ReactNode}){const has=useAuth(s=>s.has);return has(permission)?<>{children}</>:<Navigate to="/" replace/>}
 
 function App(){return <Routes>

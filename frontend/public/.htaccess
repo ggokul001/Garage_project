@@ -2,12 +2,12 @@ Options -Indexes
 
 <IfModule mod_rewrite.c>
   RewriteEngine On
-  RewriteBase /accura-trucking-services/
+  RewriteBase /ara-garage/
 
   RewriteRule ^index\.html$ - [L]
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
-  RewriteRule . /accura-trucking-services/index.html [L]
+  RewriteRule . /ara-garage/index.html [L]
 </IfModule>
 
 <IfModule mod_headers.c>

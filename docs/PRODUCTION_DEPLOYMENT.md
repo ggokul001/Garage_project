@@ -17,14 +17,14 @@ The backend package embeds Express, MySQL, JWT, Multer and every other runtime d
 
 ## Frontend upload
 
-Upload all contents inside `frontend/dist` to the `/accura-trucking-services/` public web directory. Include the hidden `.htaccess` file.
+Upload all contents inside `frontend/dist` to the `/ara-garage/` public web directory. Include the hidden `.htaccess` file.
 
 ## Backend upload
 
 Upload all contents inside `backend/production-package` to:
 
 ```text
-/home/appsdemo/accura-backend
+/home/appsdemo/ara-garage-backend
 ```
 
 The uploaded folder must contain:
@@ -44,7 +44,7 @@ No server-side install or build command is required.
 ## Webuzo application
 
 ```text
-Application Path:         /home/appsdemo/accura-backend
+Application Path:         /home/appsdemo/ara-garage-backend
 Application Type:         Node.js 22
 Port:                     30010
 Application startup file: dist/server.js
@@ -56,8 +56,8 @@ After upload, use Stop and Start (or Restart) in Webuzo.
 
 ## URLs
 
-- Frontend: `https://appsdemo.arasoftwares.in/accura-trucking-services/`
-- Backend health: `https://appsdemo.arasoftwares.in/accura-backend/api/v1/health`
+- Frontend: `https://appsdemo.arasoftwares.in/ara-garage/`
+- Backend health: `https://appsdemo.arasoftwares.in/ara-garage-backend/api/v1/health`
 
 ## Before go-live
 

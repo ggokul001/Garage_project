@@ -1,4 +1,4 @@
-# Accura Trucking Services — Entry Flow Requirements
+# Ara Garage — Entry Flow Requirements
 
 **Document status:** Revised draft for customer confirmation  
 **Implementation status:** Implemented and verified  
@@ -552,7 +552,7 @@ To avoid unnecessary complexity, the implementation will use these defaults unle
 6. Approved Work Orders cannot be deleted; they remain editable only for complaint progress and payment-independent work updates until completion.
 7. Multiple PDF/JPG/PNG attachments are supported, maximum 5 MB each; at least one is mandatory for Work Order approval.
 8. Vehicle Master initially includes Vehicle Number, Model, Chassis Number, Customer, and Status. Sale Date is optional.
-9. Job Card print follows the photographed Accura Service Checklist style; Work Order gets a clean matching service-work print.
+9. Job Card print follows the photographed Ara Garage Service Checklist style; Work Order gets a clean matching service-work print.
 
 ---
 

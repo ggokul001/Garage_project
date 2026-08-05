@@ -331,7 +331,7 @@ export function UserGuidePage() {
 
   return (
     <div>
-      <PageTitle title="User Guide" subtitle="Complete Accura Trucking Services application handbook" icon={BookOpen} />
+      <PageTitle title="User Guide" subtitle="Complete Ara Garage application handbook" icon={BookOpen} />
       <div className="guide-hero">
         <div>
           <span>KNOWLEDGE BASE</span>
