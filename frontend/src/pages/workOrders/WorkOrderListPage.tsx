@@ -1,0 +1,18 @@
+import { useState } from 'react';
+import { useMutation,useQuery,useQueryClient } from '@tanstack/react-query';
+import { Eye,Pencil,Search,Trash2,Wrench } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import { transactionApi } from '../../api';
+import { useFy } from '../../fyStore';
+import { useAuth } from '../../authStore';
+import { AuditActionButton } from '../../components/AuditTimeline';
+import { PageTitle } from '../UsersPage';
+
+export function WorkOrderListPage(){
+  const navigate=useNavigate(),qc=useQueryClient(),has=useAuth(s=>s.has),fy=useFy(s=>s.activeId);
+  const[page,setPage]=useState(1),[search,setSearch]=useState('');
+  const list=useQuery({queryKey:['work-orders',fy,page,search],queryFn:()=>transactionApi.workOrders({financial_year_id:fy,page,search}),enabled:!!fy});
+  const remove=useMutation({mutationFn:transactionApi.deleteWorkOrder,onSuccess:()=>{toast.success('Work Order deleted');qc.invalidateQueries({queryKey:['work-orders']})},onError:(e:Error)=>toast.error(e.message)});
+  return <div><PageTitle title="Work Orders" subtitle="Mechanic assignment, work updates and spares used" icon={Wrench}/><div className="panel overflow-hidden"><div className="table-toolbar"><div className="relative max-w-sm flex-1"><Search className="search-icon" size={15}/><input className="input pl-9" value={search} onChange={e=>{setSearch(e.target.value);setPage(1)}} placeholder="Work order, job card, vehicle, customer..."/></div><span>{list.data?.meta.total??0} records</span></div><div className="overflow-x-auto"><table className="w-full min-w-[1000px]"><thead><tr><th>Work Order No</th><th>Job Card No</th><th>Vehicle</th><th>Customer</th><th>Type</th><th>Job Status</th><th>Approval</th><th className="text-right">Actions</th></tr></thead><tbody>{list.data?.data.map((row:any)=><tr key={row.id}><td className="font-semibold text-primary">{row.work_order_no}</td><td>{row.job_card_no}</td><td>{row.vehicle_number}</td><td>{row.customer_name}</td><td>{row.work_order_type??'Not selected'}</td><td><span className={row.overall_status==='completed'?'badge-active':row.overall_status==='pending'?'badge-warn':'badge-info'}>{String(row.overall_status).replace('_',' ')}</span></td><td><span className={row.approval_status==='approved'?'badge-active':'badge-inactive'}>{row.approval_status}</span></td><td><div className="flex justify-end gap-1"><button className="action" title="View" onClick={()=>navigate(`/work-orders/${row.id}`)}><Eye size={15}/></button>{has('AUDIT_VIEW')&&<AuditActionButton entityType="work-orders" recordId={row.id} title={String(row.work_order_no)} code={String(row.work_order_no)}/>} {row.overall_status!=='completed'&&has('WORK_ORDER_UPDATE')&&<button className="action" title="Edit" onClick={()=>navigate(`/work-orders/${row.id}`)}><Pencil size={15}/></button>}{row.approval_status==='draft'&&has('WORK_ORDER_DELETE')&&<button className="action danger" title="Delete" onClick={()=>confirm('Delete this draft Work Order?')&&remove.mutate(row.id)}><Trash2 size={15}/></button>}</div></td></tr>)}</tbody></table></div>{!list.data?.data.length&&!list.isLoading&&<div className="empty-state"><Wrench size={30}/><span>No Work Orders found. Approve a Job Card to create one.</span></div>}</div></div>
+}

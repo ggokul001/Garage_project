@@ -1,0 +1,811 @@
+CREATE TABLE IF NOT EXISTS companies (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(20) NOT NULL UNIQUE,
+  name VARCHAR(150) NOT NULL,
+  legal_name VARCHAR(180) NULL,
+  gstin VARCHAR(15) NULL,
+  pan VARCHAR(10) NULL,
+  phone VARCHAR(20) NULL,
+  email VARCHAR(150) NULL,
+  website VARCHAR(180) NULL,
+  address_line1 VARCHAR(180) NULL,
+  address_line2 VARCHAR(180) NULL,
+  city VARCHAR(80) NULL,
+  state VARCHAR(80) NULL,
+  pincode VARCHAR(10) NULL,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS branches (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_id BIGINT UNSIGNED NOT NULL,
+  code VARCHAR(20) NOT NULL UNIQUE,
+  name VARCHAR(150) NOT NULL,
+  is_head_office TINYINT(1) NOT NULL DEFAULT 0,
+  gstin VARCHAR(15) NULL,
+  phone VARCHAR(20) NULL,
+  email VARCHAR(150) NULL,
+  address_line1 VARCHAR(180) NULL,
+  address_line2 VARCHAR(180) NULL,
+  city VARCHAR(80) NULL,
+  state VARCHAR(80) NULL,
+  pincode VARCHAR(10) NULL,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_branches_company FOREIGN KEY (company_id) REFERENCES companies(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS departments (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_id BIGINT UNSIGNED NOT NULL,
+  code VARCHAR(20) NOT NULL UNIQUE,
+  name VARCHAR(100) NOT NULL,
+  description VARCHAR(255) NULL,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_departments_company FOREIGN KEY (company_id) REFERENCES companies(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS designations (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(20) NOT NULL UNIQUE,
+  name VARCHAR(100) NOT NULL,
+  description VARCHAR(255) NULL,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS employees (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  branch_id BIGINT UNSIGNED NOT NULL,
+  department_id BIGINT UNSIGNED NOT NULL,
+  designation_id BIGINT UNSIGNED NOT NULL,
+  code VARCHAR(20) NOT NULL UNIQUE,
+  first_name VARCHAR(80) NOT NULL,
+  last_name VARCHAR(80) NULL,
+  gender ENUM('male','female','other') NULL,
+  date_of_birth DATE NULL,
+  date_of_joining DATE NULL,
+  mobile VARCHAR(20) NULL,
+  alternate_mobile VARCHAR(20) NULL,
+  email VARCHAR(150) NULL,
+  address VARCHAR(255) NULL,
+  city VARCHAR(80) NULL,
+  state VARCHAR(80) NULL,
+  pincode VARCHAR(10) NULL,
+  emergency_contact_name VARCHAR(120) NULL,
+  emergency_contact_phone VARCHAR(20) NULL,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_employees_branch FOREIGN KEY (branch_id) REFERENCES branches(id),
+  CONSTRAINT fk_employees_department FOREIGN KEY (department_id) REFERENCES departments(id),
+  CONSTRAINT fk_employees_designation FOREIGN KEY (designation_id) REFERENCES designations(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS customers (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(20) NOT NULL UNIQUE,
+  name VARCHAR(150) NOT NULL,
+  contact_person VARCHAR(120) NULL,
+  mobile VARCHAR(20) NULL,
+  alternate_mobile VARCHAR(20) NULL,
+  email VARCHAR(150) NULL,
+  gstin VARCHAR(15) NULL,
+  pan VARCHAR(10) NULL,
+  address_line1 VARCHAR(180) NULL,
+  address_line2 VARCHAR(180) NULL,
+  city VARCHAR(80) NULL,
+  state VARCHAR(80) NULL,
+  pincode VARCHAR(10) NULL,
+  credit_limit DECIMAL(14,2) NOT NULL DEFAULT 0,
+  credit_days INT UNSIGNED NOT NULL DEFAULT 0,
+  remarks VARCHAR(255) NULL,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS vendors (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(20) NOT NULL UNIQUE,
+  name VARCHAR(150) NOT NULL,
+  contact_person VARCHAR(120) NULL,
+  mobile VARCHAR(20) NULL,
+  alternate_mobile VARCHAR(20) NULL,
+  email VARCHAR(150) NULL,
+  gstin VARCHAR(15) NULL,
+  gst_type ENUM('WITH_GST','WITHOUT_GST') NOT NULL DEFAULT 'WITH_GST',
+  pan VARCHAR(10) NULL,
+  address_line1 VARCHAR(180) NULL,
+  address_line2 VARCHAR(180) NULL,
+  city VARCHAR(80) NULL,
+  state VARCHAR(80) NULL,
+  pincode VARCHAR(10) NULL,
+  payment_terms VARCHAR(120) NULL,
+  bank_name VARCHAR(120) NULL,
+  account_number VARCHAR(40) NULL,
+  ifsc_code VARCHAR(11) NULL,
+  remarks VARCHAR(255) NULL,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS gst_type ENUM('WITH_GST','WITHOUT_GST') NOT NULL DEFAULT 'WITH_GST' AFTER gstin;
+
+INSERT INTO companies (code, name, legal_name)
+SELECT 'COM-001', 'Accura Trucking Services', 'Accura Trucking Services'
+WHERE NOT EXISTS (SELECT 1 FROM companies);
+
+INSERT INTO branches (company_id, code, name, is_head_office)
+SELECT id, 'BR-001', 'Head Office', 1 FROM companies
+WHERE code = 'COM-001' AND NOT EXISTS (SELECT 1 FROM branches);
+
+INSERT INTO departments (company_id, code, name)
+SELECT id, 'DEP-001', 'Operations' FROM companies
+WHERE code = 'COM-001' AND NOT EXISTS (SELECT 1 FROM departments);
+
+INSERT INTO designations (code, name)
+SELECT 'DES-001', 'Manager' WHERE NOT EXISTS (SELECT 1 FROM designations);
+
+CREATE TABLE IF NOT EXISTS roles (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(40) NOT NULL UNIQUE,
+  name VARCHAR(100) NOT NULL,
+  description VARCHAR(255) NULL,
+  is_system TINYINT(1) NOT NULL DEFAULT 0,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS permissions (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(80) NOT NULL UNIQUE,
+  name VARCHAR(120) NOT NULL,
+  module VARCHAR(60) NOT NULL,
+  action VARCHAR(30) NOT NULL,
+  description VARCHAR(255) NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS role_permissions (
+  role_id BIGINT UNSIGNED NOT NULL,
+  permission_id BIGINT UNSIGNED NOT NULL,
+  PRIMARY KEY (role_id, permission_id),
+  CONSTRAINT fk_role_permissions_role FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
+  CONSTRAINT fk_role_permissions_permission FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS users (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(60) NOT NULL UNIQUE,
+  email VARCHAR(150) NOT NULL UNIQUE,
+  full_name VARCHAR(150) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  role_id BIGINT UNSIGNED NOT NULL,
+  branch_id BIGINT UNSIGNED NULL,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  must_change_password TINYINT(1) NOT NULL DEFAULT 0,
+  last_login_at DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_users_role FOREIGN KEY (role_id) REFERENCES roles(id),
+  CONSTRAINT fk_users_branch FOREIGN KEY (branch_id) REFERENCES branches(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS user_permission_overrides (
+  user_id BIGINT UNSIGNED NOT NULL,
+  permission_id BIGINT UNSIGNED NOT NULL,
+  allowed TINYINT(1) NOT NULL,
+  PRIMARY KEY (user_id, permission_id),
+  CONSTRAINT fk_user_permission_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_user_permission_permission FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS navigation_items (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  parent_id BIGINT UNSIGNED NULL,
+  title VARCHAR(80) NOT NULL,
+  route VARCHAR(180) NULL,
+  icon VARCHAR(50) NOT NULL DEFAULT 'Circle',
+  permission_code VARCHAR(80) NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  UNIQUE KEY uq_navigation_title_route (title, route),
+  CONSTRAINT fk_navigation_parent FOREIGN KEY (parent_id) REFERENCES navigation_items(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS help_desk_tickets (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  ticket_no VARCHAR(30) NOT NULL UNIQUE,
+  user_id BIGINT UNSIGNED NOT NULL,
+  subject VARCHAR(180) NOT NULL,
+  category ENUM('technical','data','access','training','other') NOT NULL DEFAULT 'technical',
+  priority ENUM('low','medium','high','critical') NOT NULL DEFAULT 'medium',
+  description TEXT NOT NULL,
+  status ENUM('open','in_progress','resolved','closed') NOT NULL DEFAULT 'open',
+  resolution TEXT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_helpdesk_user FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+INSERT IGNORE INTO roles (code,name,description,is_system) VALUES
+('ADMIN','Administrator','Full system access',1),
+('USER','Standard User','Standard operational access',1);
+
+INSERT IGNORE INTO permissions (code,name,module,action) VALUES
+('DASHBOARD_VIEW','View Dashboard','Dashboard','view'),
+('MD_DASHBOARD_VIEW','View MD Dashboard','Dashboard','view'),
+('USER_VIEW','View Users','User Access','view'),('USER_CREATE','Create Users','User Access','create'),('USER_UPDATE','Update Users','User Access','update'),('USER_DELETE','Delete Users','User Access','delete'),
+('ROLE_VIEW','View Roles','User Access','view'),('ROLE_CREATE','Create Roles','User Access','create'),('ROLE_UPDATE','Update Roles','User Access','update'),('ROLE_DELETE','Delete Roles','User Access','delete'),
+('PERMISSION_VIEW','View Permissions','User Access','view'),('PERMISSION_ASSIGN','Assign Permissions','User Access','assign'),
+('HELPDESK_VIEW_ALL','View All Help Desk Tickets','Support','view'),('HELPDESK_UPDATE','Update Help Desk Tickets','Support','update'),
+('COMPANY_VIEW','View Companies','Masters','view'),('COMPANY_CREATE','Create Companies','Masters','create'),('COMPANY_UPDATE','Update Companies','Masters','update'),('COMPANY_DELETE','Delete Companies','Masters','delete'),
+('BRANCH_VIEW','View Branches','Masters','view'),('BRANCH_CREATE','Create Branches','Masters','create'),('BRANCH_UPDATE','Update Branches','Masters','update'),('BRANCH_DELETE','Delete Branches','Masters','delete'),
+('DEPARTMENT_VIEW','View Departments','Masters','view'),('DEPARTMENT_CREATE','Create Departments','Masters','create'),('DEPARTMENT_UPDATE','Update Departments','Masters','update'),('DEPARTMENT_DELETE','Delete Departments','Masters','delete'),
+('DESIGNATION_VIEW','View Designations','Masters','view'),('DESIGNATION_CREATE','Create Designations','Masters','create'),('DESIGNATION_UPDATE','Update Designations','Masters','update'),('DESIGNATION_DELETE','Delete Designations','Masters','delete'),
+('EMPLOYEE_VIEW','View Employees','Masters','view'),('EMPLOYEE_CREATE','Create Employees','Masters','create'),('EMPLOYEE_UPDATE','Update Employees','Masters','update'),('EMPLOYEE_DELETE','Delete Employees','Masters','delete'),
+('CUSTOMER_VIEW','View Customers','Masters','view'),('CUSTOMER_CREATE','Create Customers','Masters','create'),('CUSTOMER_UPDATE','Update Customers','Masters','update'),('CUSTOMER_DELETE','Delete Customers','Masters','delete'),
+('VENDOR_VIEW','View Vendors','Masters','view'),('VENDOR_CREATE','Create Vendors','Masters','create'),('VENDOR_UPDATE','Update Vendors','Masters','update'),('VENDOR_DELETE','Delete Vendors','Masters','delete');
+
+INSERT IGNORE INTO role_permissions (role_id,permission_id)
+SELECT r.id,p.id FROM roles r CROSS JOIN permissions p WHERE r.code='ADMIN';
+
+INSERT IGNORE INTO navigation_items (title,route,icon,permission_code,sort_order) VALUES
+('Dashboard','/','LayoutDashboard','DASHBOARD_VIEW',1),
+('User Guide','/user-guide','BookOpen',NULL,2),
+('Help Desk','/help-desk','LifeBuoy',NULL,3);
+INSERT INTO navigation_items (title,route,icon,permission_code,sort_order)
+SELECT 'User Access',NULL,'Users',NULL,10 WHERE NOT EXISTS (SELECT 1 FROM navigation_items WHERE title='User Access' AND route IS NULL);
+INSERT INTO navigation_items (title,route,icon,permission_code,sort_order)
+SELECT 'Masters',NULL,'Database',NULL,20 WHERE NOT EXISTS (SELECT 1 FROM navigation_items WHERE title='Masters' AND route IS NULL);
+
+INSERT IGNORE INTO navigation_items (parent_id,title,route,icon,permission_code,sort_order)
+SELECT id,'Users','/users','Users','USER_VIEW',1 FROM navigation_items WHERE title='User Access' AND route IS NULL;
+INSERT IGNORE INTO navigation_items (parent_id,title,route,icon,permission_code,sort_order)
+SELECT id,'Roles & Permissions','/roles','Shield','ROLE_VIEW',2 FROM navigation_items WHERE title='User Access' AND route IS NULL;
+INSERT IGNORE INTO navigation_items (parent_id,title,route,icon,permission_code,sort_order)
+SELECT id,'Companies','/masters/companies','Building2','COMPANY_VIEW',1 FROM navigation_items WHERE title='Masters' AND route IS NULL;
+INSERT IGNORE INTO navigation_items (parent_id,title,route,icon,permission_code,sort_order)
+SELECT id,'Branches','/masters/branches','GitBranch','BRANCH_VIEW',2 FROM navigation_items WHERE title='Masters' AND route IS NULL;
+INSERT IGNORE INTO navigation_items (parent_id,title,route,icon,permission_code,sort_order)
+SELECT id,'Departments','/masters/departments','Network','DEPARTMENT_VIEW',3 FROM navigation_items WHERE title='Masters' AND route IS NULL;
+INSERT IGNORE INTO navigation_items (parent_id,title,route,icon,permission_code,sort_order)
+SELECT id,'Designations','/masters/designations','BadgeCheck','DESIGNATION_VIEW',4 FROM navigation_items WHERE title='Masters' AND route IS NULL;
+INSERT IGNORE INTO navigation_items (parent_id,title,route,icon,permission_code,sort_order)
+SELECT id,'Employees','/masters/employees','UserCog','EMPLOYEE_VIEW',5 FROM navigation_items WHERE title='Masters' AND route IS NULL;
+INSERT IGNORE INTO navigation_items (parent_id,title,route,icon,permission_code,sort_order)
+SELECT id,'Customers','/masters/customers','Handshake','CUSTOMER_VIEW',6 FROM navigation_items WHERE title='Masters' AND route IS NULL;
+INSERT IGNORE INTO navigation_items (parent_id,title,route,icon,permission_code,sort_order)
+SELECT id,'Vendors','/masters/vendors','Truck','VENDOR_VIEW',7 FROM navigation_items WHERE title='Masters' AND route IS NULL;
+
+CREATE TABLE IF NOT EXISTS financial_years (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(20) NOT NULL UNIQUE,
+  name VARCHAR(40) NOT NULL,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  is_current TINYINT(1) NOT NULL DEFAULT 0,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS vehicles (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  vehicle_number VARCHAR(30) NOT NULL UNIQUE,
+  customer_id BIGINT UNSIGNED NULL,
+  model VARCHAR(100) NULL,
+  chassis_number VARCHAR(80) NULL,
+  sale_date DATE NULL,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_vehicles_customer FOREIGN KEY (customer_id) REFERENCES customers(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS uoms (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(20) NOT NULL UNIQUE,
+  name VARCHAR(80) NOT NULL,
+  description VARCHAR(255) NULL,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS products (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(30) NOT NULL UNIQUE,
+  name VARCHAR(150) NOT NULL,
+  part_number VARCHAR(80) NULL,
+  hsn_code VARCHAR(20) NOT NULL,
+  uom_id BIGINT UNSIGNED NOT NULL,
+  default_rate DECIMAL(14,2) NOT NULL DEFAULT 0,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_products_uom FOREIGN KEY (uom_id) REFERENCES uoms(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS work_pending_sub_statuses (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(40) NOT NULL UNIQUE,
+  name VARCHAR(120) NOT NULL,
+  description VARCHAR(255) NULL,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS document_sequences (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  document_type VARCHAR(30) NOT NULL,
+  financial_year_id BIGINT UNSIGNED NOT NULL,
+  prefix VARCHAR(10) NOT NULL,
+  last_number BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_document_sequence (document_type,financial_year_id),
+  CONSTRAINT fk_document_sequence_fy FOREIGN KEY (financial_year_id) REFERENCES financial_years(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS job_cards (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  financial_year_id BIGINT UNSIGNED NOT NULL,
+  branch_id BIGINT UNSIGNED NOT NULL,
+  job_card_no VARCHAR(40) NOT NULL,
+  entry_date DATE NOT NULL,
+  vehicle_id BIGINT UNSIGNED NOT NULL,
+  customer_id BIGINT UNSIGNED NOT NULL,
+  customer_contact VARCHAR(20) NOT NULL,
+  driver_contact VARCHAR(20) NULL,
+  current_kms DECIMAL(12,2) NOT NULL DEFAULT 0,
+  current_hours DECIMAL(12,2) NOT NULL DEFAULT 0,
+  average_daily_kms DECIMAL(12,2) NOT NULL DEFAULT 0,
+  next_service_kms DECIMAL(12,2) NOT NULL DEFAULT 0,
+  average_daily_hours DECIMAL(12,2) NOT NULL DEFAULT 0,
+  next_service_hours DECIMAL(12,2) NOT NULL DEFAULT 0,
+  next_service_days INT UNSIGNED NULL,
+  next_service_date DATE NULL,
+  complaint_total DECIMAL(14,2) NOT NULL DEFAULT 0,
+  estimate_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+  advance_paid DECIMAL(14,2) NOT NULL DEFAULT 0,
+  balance DECIMAL(14,2) NOT NULL DEFAULT 0,
+  status ENUM('draft','approved','in_progress','completed','cancelled') NOT NULL DEFAULT 'draft',
+  approved_at DATETIME NULL,
+  approved_by BIGINT UNSIGNED NULL,
+  created_by BIGINT UNSIGNED NOT NULL,
+  updated_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  UNIQUE KEY uq_job_card_no_fy (job_card_no,financial_year_id),
+  CONSTRAINT fk_job_card_fy FOREIGN KEY (financial_year_id) REFERENCES financial_years(id),
+  CONSTRAINT fk_job_card_branch FOREIGN KEY (branch_id) REFERENCES branches(id),
+  CONSTRAINT fk_job_card_vehicle FOREIGN KEY (vehicle_id) REFERENCES vehicles(id),
+  CONSTRAINT fk_job_card_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
+  CONSTRAINT fk_job_card_created FOREIGN KEY (created_by) REFERENCES users(id),
+  CONSTRAINT fk_job_card_updated FOREIGN KEY (updated_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS job_card_complaints (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  job_card_id BIGINT UNSIGNED NOT NULL,
+  complaint TEXT NOT NULL,
+  cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_by BIGINT UNSIGNED NOT NULL,
+  updated_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  CONSTRAINT fk_job_complaint_job FOREIGN KEY (job_card_id) REFERENCES job_cards(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS work_orders (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  financial_year_id BIGINT UNSIGNED NOT NULL,
+  job_card_id BIGINT UNSIGNED NOT NULL UNIQUE,
+  work_order_no VARCHAR(40) NOT NULL,
+  work_order_type ENUM('AMC','WARRANTY','PAID') NULL,
+  approval_status ENUM('draft','approved') NOT NULL DEFAULT 'draft',
+  overall_status ENUM('pending','partially_completed','completed') NOT NULL DEFAULT 'pending',
+  approved_at DATETIME NULL,
+  approved_by BIGINT UNSIGNED NULL,
+  created_by BIGINT UNSIGNED NOT NULL,
+  updated_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  UNIQUE KEY uq_work_order_no_fy (work_order_no,financial_year_id),
+  CONSTRAINT fk_work_order_fy FOREIGN KEY (financial_year_id) REFERENCES financial_years(id),
+  CONSTRAINT fk_work_order_job FOREIGN KEY (job_card_id) REFERENCES job_cards(id),
+  CONSTRAINT fk_work_order_created FOREIGN KEY (created_by) REFERENCES users(id),
+  CONSTRAINT fk_work_order_updated FOREIGN KEY (updated_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS work_order_complaints (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  work_order_id BIGINT UNSIGNED NOT NULL,
+  job_card_complaint_id BIGINT UNSIGNED NOT NULL,
+  mechanic_employee_id BIGINT UNSIGNED NULL,
+  status ENUM('pending','completed') NOT NULL DEFAULT 'pending',
+  pending_sub_status_id BIGINT UNSIGNED NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_work_order_job_complaint (work_order_id,job_card_complaint_id),
+  CONSTRAINT fk_wo_complaint_order FOREIGN KEY (work_order_id) REFERENCES work_orders(id),
+  CONSTRAINT fk_wo_complaint_job_detail FOREIGN KEY (job_card_complaint_id) REFERENCES job_card_complaints(id),
+  CONSTRAINT fk_wo_complaint_mechanic FOREIGN KEY (mechanic_employee_id) REFERENCES employees(id),
+  CONSTRAINT fk_wo_complaint_sub_status FOREIGN KEY (pending_sub_status_id) REFERENCES work_pending_sub_statuses(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS work_order_spares (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  work_order_id BIGINT UNSIGNED NOT NULL,
+  product_id BIGINT UNSIGNED NOT NULL,
+  uom_id BIGINT UNSIGNED NOT NULL,
+  product_code VARCHAR(30) NOT NULL,
+  product_name VARCHAR(150) NOT NULL,
+  part_number VARCHAR(80) NULL,
+  hsn_code VARCHAR(20) NOT NULL,
+  uom_code VARCHAR(20) NOT NULL,
+  quantity DECIMAL(12,3) NOT NULL,
+  rate DECIMAL(14,2) NOT NULL,
+  total DECIMAL(14,2) NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_by BIGINT UNSIGNED NOT NULL,
+  updated_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  CONSTRAINT fk_wo_spare_order FOREIGN KEY (work_order_id) REFERENCES work_orders(id),
+  CONSTRAINT fk_wo_spare_product FOREIGN KEY (product_id) REFERENCES products(id),
+  CONSTRAINT fk_wo_spare_uom FOREIGN KEY (uom_id) REFERENCES uoms(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS work_order_attachments (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  work_order_id BIGINT UNSIGNED NOT NULL,
+  original_name VARCHAR(255) NOT NULL,
+  stored_name VARCHAR(255) NOT NULL,
+  file_path VARCHAR(500) NOT NULL,
+  mime_type VARCHAR(100) NOT NULL,
+  file_size BIGINT UNSIGNED NOT NULL,
+  uploaded_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  CONSTRAINT fk_wo_attachment_order FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS payment_receipts (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  financial_year_id BIGINT UNSIGNED NOT NULL,
+  job_card_id BIGINT UNSIGNED NOT NULL,
+  work_order_id BIGINT UNSIGNED NULL,
+  receipt_no VARCHAR(40) NOT NULL,
+  receipt_date DATE NOT NULL,
+  amount DECIMAL(14,2) NOT NULL,
+  payment_mode ENUM('CASH','UPI','CARD','BANK_TRANSFER','OTHER') NOT NULL,
+  reference_number VARCHAR(100) NULL,
+  remarks VARCHAR(255) NULL,
+  created_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  UNIQUE KEY uq_receipt_no_fy (receipt_no,financial_year_id),
+  CONSTRAINT fk_payment_fy FOREIGN KEY (financial_year_id) REFERENCES financial_years(id),
+  CONSTRAINT fk_payment_job FOREIGN KEY (job_card_id) REFERENCES job_cards(id),
+  CONSTRAINT fk_payment_work FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
+) ENGINE=InnoDB;
+
+INSERT IGNORE INTO financial_years(code,name,start_date,end_date,is_current) VALUES
+('2026-27','2026-27','2026-04-01','2027-03-31',1);
+INSERT IGNORE INTO uoms(code,name,description) VALUES ('NOS','Numbers','Individual count');
+INSERT IGNORE INTO work_pending_sub_statuses(code,name) VALUES
+('WAIT_CUSTOMER_APPROVAL','WAIT FOR CUSTOMER APPROVAL'),
+('PARTS_UNAVAILABLE','PARTS WAITING / UNAVAILABLE');
+
+INSERT IGNORE INTO permissions(code,name,module,action) VALUES
+('FY_VIEW','View Financial Years','System','view'),('FY_CREATE','Create Financial Years','System','create'),('FY_UPDATE','Update Financial Years','System','update'),('FY_DELETE','Delete Financial Years','System','delete'),
+('VEHICLE_VIEW','View Vehicles','Masters','view'),('VEHICLE_CREATE','Create Vehicles','Masters','create'),('VEHICLE_UPDATE','Update Vehicles','Masters','update'),('VEHICLE_DELETE','Delete Vehicles','Masters','delete'),
+('UOM_VIEW','View UOM','Masters','view'),('UOM_CREATE','Create UOM','Masters','create'),('UOM_UPDATE','Update UOM','Masters','update'),('UOM_DELETE','Delete UOM','Masters','delete'),
+('PRODUCT_VIEW','View Products','Masters','view'),('PRODUCT_CREATE','Create Products','Masters','create'),('PRODUCT_UPDATE','Update Products','Masters','update'),('PRODUCT_DELETE','Delete Products','Masters','delete'),
+('PENDING_STATUS_VIEW','View Pending Sub-status','Masters','view'),('PENDING_STATUS_CREATE','Create Pending Sub-status','Masters','create'),('PENDING_STATUS_UPDATE','Update Pending Sub-status','Masters','update'),('PENDING_STATUS_DELETE','Delete Pending Sub-status','Masters','delete'),
+('JOB_CARD_VIEW','View Job Cards','Job Card','view'),('JOB_CARD_CREATE','Create Job Cards','Job Card','create'),('JOB_CARD_UPDATE','Update Job Cards','Job Card','update'),('JOB_CARD_DELETE','Delete Job Cards','Job Card','delete'),('JOB_CARD_APPROVE','Approve Job Cards','Job Card','approve'),('JOB_CARD_PRINT','Print Job Cards','Job Card','print'),
+('WORK_ORDER_VIEW','View Work Orders','Work Order','view'),('WORK_ORDER_UPDATE','Update Work Orders','Work Order','update'),('WORK_ORDER_DELETE','Delete Work Orders','Work Order','delete'),('WORK_ORDER_APPROVE','Approve Work Orders','Work Order','approve'),('WORK_ORDER_PRINT','Print Work Orders','Work Order','print'),
+('ACCOUNTS_VIEW','View Accounts','Accounts','view'),('PAYMENT_RECEIVE','Receive Payments','Accounts','create'),('PAYMENT_DELETE','Delete Payments','Accounts','delete');
+
+INSERT IGNORE INTO role_permissions(role_id,permission_id)
+SELECT r.id,p.id FROM roles r CROSS JOIN permissions p WHERE r.code='ADMIN';
+
+INSERT IGNORE INTO navigation_items(title,route,icon,permission_code,sort_order) VALUES
+('Job Cards','/job-cards','ClipboardList','JOB_CARD_VIEW',30),
+('Work Orders','/work-orders','Wrench','WORK_ORDER_VIEW',31),
+('Accounts','/accounts','IndianRupee','ACCOUNTS_VIEW',32);
+INSERT IGNORE INTO navigation_items(parent_id,title,route,icon,permission_code,sort_order)
+SELECT id,'Vehicles','/masters/vehicles','Truck','VEHICLE_VIEW',8 FROM navigation_items WHERE title='Masters' AND route IS NULL;
+INSERT IGNORE INTO navigation_items(parent_id,title,route,icon,permission_code,sort_order)
+SELECT id,'UOM','/masters/uoms','Ruler','UOM_VIEW',9 FROM navigation_items WHERE title='Masters' AND route IS NULL;
+INSERT IGNORE INTO navigation_items(parent_id,title,route,icon,permission_code,sort_order)
+SELECT id,'Products','/masters/products','Package','PRODUCT_VIEW',10 FROM navigation_items WHERE title='Masters' AND route IS NULL;
+INSERT IGNORE INTO navigation_items(parent_id,title,route,icon,permission_code,sort_order)
+SELECT id,'Pending Sub-status','/masters/work-pending-sub-statuses','Clock3','PENDING_STATUS_VIEW',11 FROM navigation_items WHERE title='Masters' AND route IS NULL;
+INSERT IGNORE INTO navigation_items(parent_id,title,route,icon,permission_code,sort_order)
+SELECT id,'Financial Years','/masters/financial-years','CalendarRange','FY_VIEW',12 FROM navigation_items WHERE title='Masters' AND route IS NULL;
+
+CREATE TABLE IF NOT EXISTS store_entries (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  financial_year_id BIGINT UNSIGNED NOT NULL,
+  store_no VARCHAR(40) NOT NULL,
+  store_type ENUM('CASH','CREDIT') NOT NULL,
+  bill_no VARCHAR(80) NOT NULL,
+  entry_date DATE NOT NULL,
+  vendor_id BIGINT UNSIGNED NOT NULL,
+  vendor_gst_type ENUM('WITH_GST','WITHOUT_GST') NOT NULL,
+  vendor_gstin VARCHAR(15) NULL,
+  taxable_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+  gst_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+  discount_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+  net_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+  created_by BIGINT UNSIGNED NOT NULL,
+  updated_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  UNIQUE KEY uq_store_no_fy (store_no,financial_year_id),
+  KEY ix_store_vendor_date (vendor_id,entry_date),
+  CONSTRAINT fk_store_fy FOREIGN KEY (financial_year_id) REFERENCES financial_years(id),
+  CONSTRAINT fk_store_vendor FOREIGN KEY (vendor_id) REFERENCES vendors(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS store_entry_details (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  store_entry_id BIGINT UNSIGNED NOT NULL,
+  product_id BIGINT UNSIGNED NOT NULL,
+  product_code VARCHAR(30) NOT NULL,
+  product_name VARCHAR(150) NOT NULL,
+  part_number VARCHAR(80) NULL,
+  hsn_code VARCHAR(20) NOT NULL,
+  quantity DECIMAL(14,3) NOT NULL,
+  rate DECIMAL(14,2) NOT NULL,
+  gst_percent DECIMAL(6,2) NOT NULL DEFAULT 0,
+  discount_percent DECIMAL(6,2) NOT NULL DEFAULT 0,
+  base_amount DECIMAL(14,2) NOT NULL,
+  discount_amount DECIMAL(14,2) NOT NULL,
+  taxable_amount DECIMAL(14,2) NOT NULL,
+  gst_amount DECIMAL(14,2) NOT NULL,
+  total_amount DECIMAL(14,2) NOT NULL,
+  sort_order INT UNSIGNED NOT NULL DEFAULT 1,
+  created_by BIGINT UNSIGNED NOT NULL,
+  updated_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  CONSTRAINT fk_store_detail_header FOREIGN KEY (store_entry_id) REFERENCES store_entries(id),
+  CONSTRAINT fk_store_detail_product FOREIGN KEY (product_id) REFERENCES products(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS vendor_payments (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  financial_year_id BIGINT UNSIGNED NOT NULL,
+  payment_no VARCHAR(40) NOT NULL,
+  payment_date DATE NOT NULL,
+  vendor_id BIGINT UNSIGNED NOT NULL,
+  total_amount DECIMAL(14,2) NOT NULL,
+  remarks VARCHAR(255) NULL,
+  created_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  UNIQUE KEY uq_vendor_payment_no_fy (payment_no,financial_year_id),
+  CONSTRAINT fk_vendor_payment_fy FOREIGN KEY (financial_year_id) REFERENCES financial_years(id),
+  CONSTRAINT fk_vendor_payment_vendor FOREIGN KEY (vendor_id) REFERENCES vendors(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS vendor_payment_allocations (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  vendor_payment_id BIGINT UNSIGNED NOT NULL,
+  store_entry_id BIGINT UNSIGNED NOT NULL,
+  amount DECIMAL(14,2) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_vendor_payment_store (vendor_payment_id,store_entry_id),
+  CONSTRAINT fk_vendor_allocation_payment FOREIGN KEY (vendor_payment_id) REFERENCES vendor_payments(id),
+  CONSTRAINT fk_vendor_allocation_store FOREIGN KEY (store_entry_id) REFERENCES store_entries(id)
+) ENGINE=InnoDB;
+
+INSERT IGNORE INTO permissions(code,name,module,action) VALUES
+('STORE_VIEW','View Store Entries','Store','view'),('STORE_CREATE','Create Store Entries','Store','create'),('STORE_UPDATE','Update Store Entries','Store','update'),('STORE_DELETE','Delete Store Entries','Store','delete'),
+('VENDOR_PAYMENT_VIEW','View Vendor Payments','Vendor Payment','view'),('VENDOR_PAYMENT_CREATE','Create Vendor Payments','Vendor Payment','create'),('VENDOR_PAYMENT_DELETE','Delete Vendor Payments','Vendor Payment','delete'),
+('OUTSTANDING_VIEW','View Vendor Outstanding','Outstanding Report','view'),('OUTSTANDING_EXPORT','Export Vendor Outstanding','Outstanding Report','export');
+
+INSERT IGNORE INTO role_permissions(role_id,permission_id)
+SELECT r.id,p.id FROM roles r CROSS JOIN permissions p WHERE r.code='ADMIN';
+
+INSERT IGNORE INTO navigation_items(title,route,icon,permission_code,sort_order) VALUES
+('Store','/stores','Warehouse','STORE_VIEW',33),
+('Vendor Payments','/vendor-payments','WalletCards','VENDOR_PAYMENT_VIEW',34),
+('Vendor Outstanding','/reports/vendor-outstanding','FileSpreadsheet','OUTSTANDING_VIEW',35);
+
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS monthly_salary DECIMAL(14,2) NOT NULL DEFAULT 0 AFTER emergency_contact_phone;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS ot_rate_per_hour DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER monthly_salary;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS payroll_applicable TINYINT(1) NOT NULL DEFAULT 1 AFTER ot_rate_per_hour;
+
+CREATE TABLE IF NOT EXISTS shifts (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(20) NOT NULL UNIQUE,
+  name VARCHAR(80) NOT NULL,
+  in_time TIME NOT NULL,
+  out_time TIME NOT NULL,
+  working_hours DECIMAL(5,2) NOT NULL DEFAULT 8,
+  description VARCHAR(255) NULL,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS daily_attendance (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  financial_year_id BIGINT UNSIGNED NOT NULL,
+  attendance_date DATE NOT NULL,
+  employee_id BIGINT UNSIGNED NOT NULL,
+  branch_id BIGINT UNSIGNED NOT NULL,
+  shift_id BIGINT UNSIGNED NULL,
+  additional_shift_id BIGINT UNSIGNED NULL,
+  attendance_type ENUM('PRESENT','PERMISSION','HALF_DAY_LEAVE','FULL_DAY_LEAVE','ABSENT') NOT NULL DEFAULT 'PRESENT',
+  in_time TIME NULL,
+  out_time TIME NULL,
+  permission_hours DECIMAL(5,2) NOT NULL DEFAULT 0,
+  ot_hours DECIMAL(6,2) NOT NULL DEFAULT 0,
+  source ENUM('MANUAL','EXCEL','BIOMETRIC') NOT NULL DEFAULT 'MANUAL',
+  remarks VARCHAR(255) NULL,
+  created_by BIGINT UNSIGNED NOT NULL,
+  updated_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_attendance_employee_date (employee_id,attendance_date),
+  KEY ix_attendance_date_branch (attendance_date,branch_id),
+  CONSTRAINT fk_attendance_fy FOREIGN KEY(financial_year_id) REFERENCES financial_years(id),
+  CONSTRAINT fk_attendance_employee FOREIGN KEY(employee_id) REFERENCES employees(id),
+  CONSTRAINT fk_attendance_branch FOREIGN KEY(branch_id) REFERENCES branches(id),
+  CONSTRAINT fk_attendance_shift FOREIGN KEY(shift_id) REFERENCES shifts(id),
+  CONSTRAINT fk_attendance_additional_shift FOREIGN KEY(additional_shift_id) REFERENCES shifts(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS salary_advances (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  financial_year_id BIGINT UNSIGNED NOT NULL,
+  advance_no VARCHAR(40) NOT NULL,
+  advance_date DATE NOT NULL,
+  employee_id BIGINT UNSIGNED NOT NULL,
+  amount DECIMAL(14,2) NOT NULL,
+  recovery_month CHAR(7) NOT NULL,
+  remarks VARCHAR(255) NULL,
+  status ENUM('PENDING','RECOVERED') NOT NULL DEFAULT 'PENDING',
+  created_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  UNIQUE KEY uq_salary_advance_no_fy (advance_no,financial_year_id),
+  CONSTRAINT fk_salary_advance_fy FOREIGN KEY(financial_year_id) REFERENCES financial_years(id),
+  CONSTRAINT fk_salary_advance_employee FOREIGN KEY(employee_id) REFERENCES employees(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS payroll_runs (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  financial_year_id BIGINT UNSIGNED NOT NULL,
+  salary_month CHAR(7) NOT NULL,
+  branch_id BIGINT UNSIGNED NOT NULL,
+  status ENUM('DRAFT','FINALIZED') NOT NULL DEFAULT 'DRAFT',
+  finalized_at DATETIME NULL,
+  created_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_payroll_month_branch (salary_month,branch_id),
+  CONSTRAINT fk_payroll_run_fy FOREIGN KEY(financial_year_id) REFERENCES financial_years(id),
+  CONSTRAINT fk_payroll_run_branch FOREIGN KEY(branch_id) REFERENCES branches(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS payroll_details (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  payroll_run_id BIGINT UNSIGNED NOT NULL,
+  employee_id BIGINT UNSIGNED NOT NULL,
+  month_days INT UNSIGNED NOT NULL,
+  present_days DECIMAL(6,2) NOT NULL DEFAULT 0,
+  permission_days DECIMAL(6,2) NOT NULL DEFAULT 0,
+  half_days DECIMAL(6,2) NOT NULL DEFAULT 0,
+  leave_days DECIMAL(6,2) NOT NULL DEFAULT 0,
+  absent_days DECIMAL(6,2) NOT NULL DEFAULT 0,
+  payable_days DECIMAL(6,2) NOT NULL DEFAULT 0,
+  ot_hours DECIMAL(8,2) NOT NULL DEFAULT 0,
+  monthly_salary DECIMAL(14,2) NOT NULL DEFAULT 0,
+  earned_salary DECIMAL(14,2) NOT NULL DEFAULT 0,
+  ot_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+  advance_deduction DECIMAL(14,2) NOT NULL DEFAULT 0,
+  other_earnings DECIMAL(14,2) NOT NULL DEFAULT 0,
+  other_deductions DECIMAL(14,2) NOT NULL DEFAULT 0,
+  net_salary DECIMAL(14,2) NOT NULL DEFAULT 0,
+  remarks VARCHAR(255) NULL,
+  UNIQUE KEY uq_payroll_employee (payroll_run_id,employee_id),
+  CONSTRAINT fk_payroll_detail_run FOREIGN KEY(payroll_run_id) REFERENCES payroll_runs(id) ON DELETE CASCADE,
+  CONSTRAINT fk_payroll_detail_employee FOREIGN KEY(employee_id) REFERENCES employees(id)
+) ENGINE=InnoDB;
+
+INSERT IGNORE INTO shifts(code,name,in_time,out_time,working_hours) VALUES
+('GENERAL','General Shift','09:30:00','18:30:00',8),('MORNING','Morning Shift','06:00:00','14:00:00',8),('EVENING','Evening Shift','14:00:00','22:00:00',8);
+
+INSERT IGNORE INTO permissions(code,name,module,action) VALUES
+('SHIFT_VIEW','View Shifts','Attendance & Payroll','view'),('SHIFT_CREATE','Create Shifts','Attendance & Payroll','create'),('SHIFT_UPDATE','Update Shifts','Attendance & Payroll','update'),('SHIFT_DELETE','Delete Shifts','Attendance & Payroll','delete'),
+('ATTENDANCE_VIEW','View Attendance','Attendance & Payroll','view'),('ATTENDANCE_CREATE','Save Attendance','Attendance & Payroll','create'),('ATTENDANCE_IMPORT','Import Attendance','Attendance & Payroll','import'),
+('SALARY_ADVANCE_VIEW','View Salary Advances','Attendance & Payroll','view'),('SALARY_ADVANCE_CREATE','Create Salary Advances','Attendance & Payroll','create'),('SALARY_ADVANCE_DELETE','Delete Salary Advances','Attendance & Payroll','delete'),
+('PAYROLL_VIEW','View Payroll','Attendance & Payroll','view'),('PAYROLL_GENERATE','Generate Payroll','Attendance & Payroll','create'),('PAYROLL_FINALIZE','Finalize Payroll','Attendance & Payroll','approve'),('SALARY_REPORT_EXPORT','Export Salary Reports','Attendance & Payroll','export');
+INSERT IGNORE INTO role_permissions(role_id,permission_id) SELECT r.id,p.id FROM roles r CROSS JOIN permissions p WHERE r.code='ADMIN';
+INSERT INTO navigation_items(title,route,icon,permission_code,sort_order) SELECT 'Attendance & Payroll',NULL,'CalendarClock',NULL,40 WHERE NOT EXISTS(SELECT 1 FROM navigation_items WHERE title='Attendance & Payroll' AND route IS NULL);
+INSERT IGNORE INTO navigation_items(parent_id,title,route,icon,permission_code,sort_order) SELECT id,'Daily Attendance','/attendance','CalendarCheck','ATTENDANCE_VIEW',1 FROM navigation_items WHERE title='Attendance & Payroll' AND route IS NULL;
+INSERT IGNORE INTO navigation_items(parent_id,title,route,icon,permission_code,sort_order) SELECT id,'Salary Advance','/salary-advances','HandCoins','SALARY_ADVANCE_VIEW',2 FROM navigation_items WHERE title='Attendance & Payroll' AND route IS NULL;
+INSERT IGNORE INTO navigation_items(parent_id,title,route,icon,permission_code,sort_order) SELECT id,'Payroll & Reports','/payroll','ReceiptIndianRupee','PAYROLL_VIEW',3 FROM navigation_items WHERE title='Attendance & Payroll' AND route IS NULL;
+INSERT IGNORE INTO navigation_items(parent_id,title,route,icon,permission_code,sort_order) SELECT id,'Shift Master','/masters/shifts','Clock','SHIFT_VIEW',4 FROM navigation_items WHERE title='Attendance & Payroll' AND route IS NULL;
+UPDATE navigation_items SET permission_code='DASHBOARD_VIEW' WHERE title='Dashboard' AND route='/';
+INSERT IGNORE INTO navigation_items(title,route,icon,permission_code,sort_order) VALUES('MD Dashboard','/md-dashboard','ChartNoAxesCombined','MD_DASHBOARD_VIEW',2);
+UPDATE navigation_items SET sort_order=3 WHERE title='User Guide' AND route='/user-guide';
+UPDATE navigation_items SET sort_order=4 WHERE title='Help Desk' AND route='/help-desk';
+
+CREATE TABLE IF NOT EXISTS master_code_sequences (
+  master_name VARCHAR(80) PRIMARY KEY,
+  last_number BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  module_name VARCHAR(100) NOT NULL,
+  entity_type VARCHAR(100) NOT NULL,
+  record_id VARCHAR(80) NULL,
+  record_display_name VARCHAR(180) NULL,
+  action VARCHAR(40) NOT NULL,
+  route VARCHAR(255) NOT NULL,
+  old_values JSON NULL,
+  new_values JSON NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  ip_address VARCHAR(64) NULL,
+  user_agent VARCHAR(500) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY ix_audit_created (created_at),
+  KEY ix_audit_module_action (module_name,action),
+  KEY ix_audit_user (user_id),
+  CONSTRAINT fk_audit_user FOREIGN KEY(user_id) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+INSERT IGNORE INTO permissions(code,name,module,action) VALUES
+('AUDIT_VIEW','View Audit Report','Reports','view'),
+('AUDIT_EXPORT','Export Audit Report','Reports','export'),
+('ENTRY_REPORT_VIEW','View Entry Reports','Reports','view'),
+('ENTRY_REPORT_EXPORT','Export Entry Reports','Reports','export');
+INSERT IGNORE INTO role_permissions(role_id,permission_id)
+SELECT r.id,p.id FROM roles r CROSS JOIN permissions p WHERE r.code='ADMIN';
+INSERT INTO navigation_items(title,route,icon,permission_code,sort_order)
+SELECT 'Reports',NULL,'FileBarChart',NULL,50
+WHERE NOT EXISTS(SELECT 1 FROM navigation_items WHERE title='Reports' AND route IS NULL);
+INSERT IGNORE INTO navigation_items(parent_id,title,route,icon,permission_code,sort_order)
+SELECT id,'Entry Reports','/reports/entries','TableProperties','ENTRY_REPORT_VIEW',1 FROM navigation_items WHERE title='Reports' AND route IS NULL;
+INSERT IGNORE INTO navigation_items(parent_id,title,route,icon,permission_code,sort_order)
+SELECT id,'Audit Report','/reports/audit','History','AUDIT_VIEW',2 FROM navigation_items WHERE title='Reports' AND route IS NULL;

@@ -1,0 +1,52 @@
+import { FormEvent,useState } from 'react';
+import { Navigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { ArrowRight,Check,Eye,EyeOff,Gauge,LockKeyhole,Mail,Monitor,Moon,ShieldCheck,Sparkles,Sun,Truck,Wrench } from 'lucide-react';
+import { useAuth } from '../authStore';
+import { Theme,useTheme } from '../ThemeProvider';
+
+const themeOptions:[Theme,typeof Sun,string][]= [['light',Sun,'Light'],['dark',Moon,'Dark'],['system',Monitor,'System']];
+
+export function LoginPage(){
+  const token=useAuth(s=>s.token),loginAction=useAuth(s=>s.login);
+  const {theme,setTheme}=useTheme();
+  const [login,setLogin]=useState(''),[password,setPassword]=useState(''),[show,setShow]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState('');
+  if(token)return <Navigate to="/" replace/>;
+
+  const submit=async(e:FormEvent)=>{e.preventDefault();setLoading(true);setError('');try{await loginAction(login,password)}catch(err){setError(err instanceof Error?err.message:'Unable to sign in')}finally{setLoading(false)}};
+
+  return <div className="auth-page">
+    <div className="auth-aurora auth-aurora-one"/><div className="auth-aurora auth-aurora-two"/><div className="auth-grid-mask"/>
+    <div className="auth-theme" aria-label="Theme selector">{themeOptions.map(([value,Icon,label])=><button key={value} className={theme===value?'active':''} title={`${label} theme`} onClick={()=>setTheme(value)}><Icon size={15}/><span>{label}</span></button>)}</div>
+
+    <main className="auth-layout">
+      <motion.section className="auth-story" initial={{opacity:0,x:-24}} animate={{opacity:1,x:0}} transition={{duration:.55}}>
+        <div className="auth-story-brand"><span className="auth-story-mark"><Truck size={27}/></span><div><strong>ACCURA</strong><small>TRUCKING SERVICES</small></div></div>
+        <div className="auth-story-copy"><span className="auth-kicker"><Sparkles size={13}/> Service operations, simplified</span><h1>Every service job.<br/><em>One clear journey.</em></h1><p>Move seamlessly from customer complaint to work completion and payment—all in one secure workspace.</p></div>
+        <div className="auth-feature-grid">
+          <div><span><Wrench size={17}/></span><strong>Workshop Control</strong><small>Job cards to work orders</small></div>
+          <div><span><Gauge size={17}/></span><strong>Live Progress</strong><small>Clear service visibility</small></div>
+          <div><span><ShieldCheck size={17}/></span><strong>Secure Access</strong><small>Role-based protection</small></div>
+        </div>
+        <div className="auth-story-foot"><span/><p>Built for Accura service teams</p></div>
+      </motion.section>
+
+      <motion.section className="auth-shell" initial={{opacity:0,y:20,scale:.98}} animate={{opacity:1,y:0,scale:1}} transition={{duration:.5,delay:.08}}>
+        <div className="auth-card">
+          <div className="auth-card-shine"/>
+          <div className="auth-mobile-brand"><span className="auth-story-mark"><Truck size={23}/></span><div><strong>ACCURA</strong><small>TRUCKING SERVICES</small></div></div>
+          <div className="auth-card-head"><span className="auth-badge"><ShieldCheck size={12}/> Protected workspace</span><h2>Welcome back</h2><p>Enter your credentials to access the service console.</p></div>
+          <form onSubmit={submit} className="auth-form">
+            <div><label className="label" htmlFor="login">Username or email</label><div className="auth-input-wrap"><Mail size={17}/><input id="login" value={login} onChange={e=>setLogin(e.target.value)} placeholder="Enter username or email" autoComplete="username" autoFocus required/></div></div>
+            <div><div className="flex items-center justify-between"><label className="label" htmlFor="password">Password</label><span className="auth-forgot">Forgot password?</span></div><div className="auth-input-wrap"><LockKeyhole size={17}/><input id="password" type={show?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Enter your password" autoComplete="current-password" required/><button type="button" aria-label={show?'Hide password':'Show password'} onClick={()=>setShow(!show)}>{show?<EyeOff size={17}/>:<Eye size={17}/>}</button></div></div>
+            <label className="auth-remember"><span className="auth-check"><Check size={11}/></span><span>Keep me signed in on this device</span></label>
+            {error&&<div className="auth-error">{error}</div>}
+            <button className="auth-submit" disabled={loading}><span>{loading?'Signing in…':'Sign in securely'}</span><ArrowRight size={17}/></button>
+          </form>
+          <div className="auth-security"><LockKeyhole size={12}/> Authorized personnel only · Encrypted access</div>
+        </div>
+      </motion.section>
+    </main>
+    <footer className="auth-footer"><span>© {new Date().getFullYear()} Accura Trucking Services</span><i aria-hidden="true"/><span>Developed by <strong>ARA Softwares</strong></span></footer>
+  </div>;
+}
