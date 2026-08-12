@@ -6,7 +6,10 @@
     "dev": "concurrently -n API,WEB -c blue,green \"npm run dev -w backend\" \"npm run dev -w frontend\"",
     "build": "npm run build -w backend && npm run build -w frontend",
     "db:migrate": "npm run db:migrate -w backend",
-    "db:migrate:production": "npm run db:migrate:production -w backend"
+    "db:migrate:production": "npm run db:migrate:production -w backend",
+    "seed:base": "node scripts/seed-product-data.mjs",
+    "seed:operations": "node scripts/seed-operational-data.mjs",
+    "seed:product": "npm run seed:base && npm run seed:operations"
   },
   "devDependencies": {
     "concurrently": "^9.0.0"
