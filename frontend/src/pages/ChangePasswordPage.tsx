@@ -1,11 +1,17 @@
 import { FormEvent, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { KeyRound, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { PasswordField } from '../components/PasswordField';
 import { accessApi } from '../api';
+import { useAuth } from '../authStore';
 import { PageTitle } from './UsersPage';
 
 export function ChangePasswordPage() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const logout = useAuth((state) => state.logout);
   const [currentPassword, setCurrent] = useState('');
   const [newPassword, setNew] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -16,10 +22,10 @@ export function ChangePasswordPage() {
     setSaving(true);
     try {
       await accessApi.changePassword(currentPassword, newPassword);
-      toast.success('Password changed successfully');
-      setCurrent('');
-      setNew('');
-      setConfirm('');
+      queryClient.clear();
+      logout();
+      toast.success('Password changed. Please sign in with your new password.');
+      navigate('/login', { replace: true });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to change password');
     } finally {
