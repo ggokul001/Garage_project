@@ -9,7 +9,7 @@ import { AuditActionButton } from '../components/AuditTimeline';
 import { Modal } from '../components/Modal';
 import { PasswordField } from '../components/PasswordField';
 
-const blank = { username: '', email: '', full_name: '', role_id: '', branch_id: '', status: 'active', password: '' };
+const blank = { username: '', email: '', full_name: '', role_id: '', branch_id: null, status: 'active', password: '' };
 
 export function UsersPage() {
   const qc = useQueryClient();
@@ -28,7 +28,7 @@ export function UsersPage() {
   const save = useMutation({ mutationFn: () => editing ? accessApi.updateUser(editing.id, form) : accessApi.createUser(form), onSuccess: () => { toast.success(editing ? 'User updated' : 'User created'); setOpen(false); qc.invalidateQueries({ queryKey: ['users'] }); }, onError: (error: Error) => toast.error(error.message) });
   const remove = useMutation({ mutationFn: accessApi.removeUser, onSuccess: () => { toast.success('User deleted'); qc.invalidateQueries({ queryKey: ['users'] }); }, onError: (error: Error) => toast.error(error.message) });
   const reset = useMutation({ mutationFn: () => accessApi.resetPassword(resetUser!.id, newPassword), onSuccess: () => { toast.success('Password reset'); setResetUser(null); setNewPassword(''); }, onError: (error: Error) => toast.error(error.message) });
-  const edit = (user: User) => { setEditing(user); setForm({ username: user.username, email: user.email, full_name: user.full_name, role_id: user.role_id, branch_id: user.branch_id ?? '', status: user.status }); setOpen(true); };
+  const edit = (user: User) => { setEditing(user); setForm({ username: user.username, email: user.email, full_name: user.full_name, role_id: user.role_id, branch_id: user.branch_id ?? null, status: user.status }); setOpen(true); };
   const submit = (event: FormEvent) => { event.preventDefault(); save.mutate(); };
 
   return <div>
