@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Eye, Pencil, Plus, Search, Trash2, ChevronLeft, ChevronRight, Inbox, XCircle } from 'lucide-react';
+import { Eye, ImagePlus, Pencil, Plus, Search, Trash2, ChevronLeft, ChevronRight, Inbox, XCircle } from 'lucide-react';
 import { masterApi, MasterSlug, RecordData } from '../api';
 import { Field, masterBySlug } from '../masterConfig';
 import { Modal } from '../components/Modal';
@@ -19,9 +19,12 @@ export function MasterPage(){
   const has=useAuth(s=>s.has),prefix=permissionPrefix[slug],isCompanyProfile=slug==='companies';const canCreate=!isCompanyProfile&&has(`${prefix}_CREATE`),canUpdate=has(`${prefix}_UPDATE`),canDelete=!isCompanyProfile&&has(`${prefix}_DELETE`);
   const [page,setPage]=useState(1),[search,setSearch]=useState(''),[formOpen,setFormOpen]=useState(false),[editing,setEditing]=useState<RecordData|null>(null),[viewing,setViewing]=useState<RecordData|null>(null);
   const [form,setForm]=useState<Record<string,unknown>>({});
+  const [companyLogo,setCompanyLogo]=useState<File|null>(null);
   useEffect(()=>{setPage(1);setSearch('');setFormOpen(false);setEditing(null)},[slug]);
   const list=useQuery({queryKey:['master',slug,page,search],queryFn:()=>masterApi.list(slug,{page,pageSize:15,search})});
+  const branding=useQuery({queryKey:['company-branding'],queryFn:masterApi.companyBranding,enabled:isCompanyProfile});
   const save=useMutation({mutationFn:(data:Record<string,unknown>)=>editing?masterApi.update(slug,editing.id,data):masterApi.create(slug,data),onSuccess:()=>{toast.success(`${def.singular} ${editing?'updated':'created'}`);setFormOpen(false);setEditing(null);qc.invalidateQueries({queryKey:['master',slug]})},onError:(e:Error)=>toast.error(e.message)});
+  const saveLogo=useMutation({mutationFn:()=>masterApi.saveCompanyLogo(companyLogo!),onSuccess:(response:any)=>{toast.success(response.message);setCompanyLogo(null);qc.invalidateQueries({queryKey:['master','companies']});qc.invalidateQueries({queryKey:['company-branding']})},onError:(e:Error)=>toast.error(e.message)});
   const remove=useMutation({mutationFn:(id:number)=>masterApi.remove(slug,id),onSuccess:()=>{toast.success(`${def.singular} deleted`);qc.invalidateQueries({queryKey:['master',slug]})},onError:(e:Error)=>toast.error(e.message)});
   const startCreate=()=>{setEditing(null);setForm(emptyFor(def.fields));setFormOpen(true)};
   const startEdit=(row:RecordData)=>{setEditing(row);setForm(Object.fromEntries(def.fields.map(f=>[f.name,row[f.name]??(f.type==='checkbox'?false:'')])));setFormOpen(true)};
@@ -30,6 +33,7 @@ export function MasterPage(){
   const total=list.data?.meta.total??0,pages=Math.max(1,Math.ceil(total/15));
   return <div>
     <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center"><div><h1 className="text-xl font-bold tracking-tight">{isCompanyProfile?'Company Profile':def.title}</h1><p className="mt-1 text-sm text-fg-muted">{isCompanyProfile?'View and maintain your own company details':def.subtitle}</p></div>{canCreate&&<button className="btn-primary sm:ml-auto" onClick={startCreate}><Plus size={16}/>New {def.singular.toLowerCase()}</button>}</div>
+    {isCompanyProfile&&list.data?.data[0]&&<section className="panel mb-4 p-5"><div className="grid items-center gap-5 md:grid-cols-[220px_1fr]"><div className="grid min-h-28 place-items-center rounded-xl border border-dashed border-border bg-white p-3">{branding.data?.logo_data_url?<img src={String(branding.data.logo_data_url)} alt="Company logo" className="max-h-24 max-w-full object-contain"/>:<div className="text-center text-xs text-fg-subtle">No company logo uploaded</div>}</div><div><h3 className="font-semibold">Company Print Logo</h3><p className="mt-1 text-xs leading-5 text-fg-muted">Job Card, Work Order and Salary Slip prints use this company logo and profile details. Ara Garage product logo will not be used as fallback.</p><div className="mt-3 flex flex-wrap items-center gap-2"><label className="btn-secondary cursor-pointer"><ImagePlus size={15}/>Select logo<input className="hidden" type="file" accept=".jpg,.jpeg,.png,.webp" onChange={event=>setCompanyLogo(event.target.files?.[0]??null)}/></label>{companyLogo&&<button className="btn-primary" onClick={()=>saveLogo.mutate()} disabled={saveLogo.isPending}>{saveLogo.isPending?'Uploading...':'Upload logo'}</button>}{companyLogo&&<span className="text-xs text-fg-muted">{companyLogo.name}</span>}</div></div></div></section>}
     <div className="card overflow-hidden p-0"><div className="flex items-center border-b border-border p-4"><div className="relative w-full max-w-sm"><Search size={15} className="absolute left-3 top-2.5 text-fg-subtle"/><input className="input pl-9" value={search} onChange={e=>{setSearch(e.target.value);setPage(1)}} placeholder={`Search ${def.title.toLowerCase()}...`}/>{search&&<button onClick={()=>setSearch('')} className="absolute right-2 top-2 text-fg-subtle hover:text-fg"><XCircle size={17}/></button>}</div><span className="ml-auto hidden text-xs text-fg-subtle sm:block">{total} record{total===1?'':'s'}</span></div>
       <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left"><thead><tr>{def.columns.map(c=><th key={c.key}>{c.label}</th>)}<th>Status</th><th className="w-32 text-right">Actions</th></tr></thead><tbody>
         {list.isLoading&&Array.from({length:5}).map((_,i)=><tr key={i}>{Array.from({length:def.columns.length+2}).map((_,j)=><td key={j}><div className="h-3 animate-pulse rounded bg-surface-3"/></td>)}</tr>)}

@@ -236,6 +236,8 @@ const guides = [
     steps: [
       'Open Masters → Company Profile to view the company assigned to your login.',
       'Use Edit to maintain name, legal name, GSTIN, PAN, contact, website and registered address details.',
+      'Use Company Print Logo to upload a JPG, PNG or WEBP logo. The file is stored inside your company and upload-month folder.',
+      'Job Card, Work Order and Salary Slip prints use this company logo and profile details. If no logo is uploaded, the company name and details are printed without the Ara Garage product logo.',
       'Company Code is system-controlled. Account type, trial period, access status and plan limits can be changed only by Super Admin.',
       'Company information is used by branches, documents and dashboards; another company’s profile is never visible.',
     ],

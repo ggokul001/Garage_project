@@ -22,6 +22,8 @@ export const masterApi = {
   create: async (slug: MasterSlug, data: Record<string, unknown>) => (await client.post(`/masters/${slug}`, data)).data,
   update: async (slug: MasterSlug, id: number, data: Record<string, unknown>) => (await client.put(`/masters/${slug}/${id}`, data)).data,
   remove: async (slug: MasterSlug, id: number) => (await client.delete(`/masters/${slug}/${id}`)).data,
+  companyBranding:async()=>(await client.get('/masters/company-branding')).data.data as RecordData,
+  saveCompanyLogo:async(logo:File)=>{const form=new FormData();form.append('logo',logo);return(await client.put('/masters/company-branding/logo',form)).data},
 };
 
 export type Permission={id:number;code:string;name:string;module:string;action:string};

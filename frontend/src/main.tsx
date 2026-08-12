@@ -2,7 +2,7 @@ import React,{useEffect} from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter,Navigate,Route,Routes } from 'react-router-dom';
 import { QueryClient,QueryClientProvider } from '@tanstack/react-query';
-import { Toaster } from 'react-hot-toast';
+import toast,{ Toaster } from 'react-hot-toast';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { MasterPage } from './pages/MasterPage';
@@ -35,6 +35,8 @@ import { CompaniesPage } from './pages/superAdmin/CompaniesPage';
 import { PaymentEntryPage } from './pages/superAdmin/PaymentEntryPage';
 import { PaymentReportPage } from './pages/superAdmin/PaymentReportPage';
 import { PlatformProfilePage } from './pages/superAdmin/PlatformProfilePage';
+import {transactionApi} from './api';
+import {printSalarySlip,printWorkOrder} from './utils/companyPrint';
 import './styles.css';
 
 enableNumericTextInputs();
@@ -44,7 +46,25 @@ function Protected(){const token=useAuth(s=>s.token),ready=useAuth(s=>s.ready),r
 function PermissionRoute({permission,children}:{permission:string;children:React.ReactNode}){const has=useAuth(s=>s.has);return has(permission)?<>{children}</>:<Navigate to="/" replace/>}
 function Home(){const user=useAuth(s=>s.user);return user?.role_code==='SUPER_ADMIN'?<Navigate to="/super-admin/companies" replace/>:<Dashboard view="operations"/>}
 
-function App(){return <Routes>
+function TenantPrintBridge(){
+  useEffect(()=>{
+    const handle=(event:MouseEvent)=>{
+      const button=(event.target as Element|null)?.closest('button');
+      if(!button||!button.textContent?.trim().toLowerCase().includes('print')||window.location.pathname.includes('/super-admin/'))return;
+      const workOrder=window.location.pathname.match(/\/work-orders\/(\d+)/);
+      if(workOrder){event.preventDefault();event.stopPropagation();transactionApi.workOrder(Number(workOrder[1])).then(printWorkOrder).catch(error=>toast.error(error.message));return}
+      if(window.location.pathname.endsWith('/payroll')&&document.querySelector('.salary-slip')){
+        const text=document.querySelector('.salary-slip')?.textContent??'',queries=client.getQueriesData<any>({queryKey:['payroll']});
+        const row=queries.flatMap(([,data])=>data?.data??[]).find(item=>text.includes(String(item.employee_code))&&text.includes(String(item.employee_name)));
+        if(row){event.preventDefault();event.stopPropagation();printSalarySlip(row).catch(error=>toast.error(error.message))}
+      }
+    };
+    document.addEventListener('click',handle,true);return()=>document.removeEventListener('click',handle,true);
+  },[]);
+  return null;
+}
+
+function App(){return <><TenantPrintBridge/><Routes>
   <Route path="/login" element={<LoginPage/>}/>
   <Route element={<Protected/>}>
     <Route index element={<Home/>}/>
@@ -64,6 +84,6 @@ function App(){return <Routes>
     <Route path="attendance" element={<PermissionRoute permission="ATTENDANCE_VIEW"><AttendancePage/></PermissionRoute>}/><Route path="salary-advances" element={<PermissionRoute permission="SALARY_ADVANCE_VIEW"><SalaryAdvancePage/></PermissionRoute>}/><Route path="payroll" element={<PermissionRoute permission="PAYROLL_VIEW"><PayrollPage/></PermissionRoute>}/>
     <Route path="*" element={<Navigate to="/" replace/>}/>
   </Route>
-</Routes>}
+</Routes></>}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><QueryClientProvider client={client}><ThemeProvider><BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/,'')}><App/><Toaster position="top-right" toastOptions={{duration:3000}}/></BrowserRouter></ThemeProvider></QueryClientProvider></React.StrictMode>);

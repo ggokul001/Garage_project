@@ -56,6 +56,13 @@ async function migrate() {
     const target=path.join(uploadsRoot,'platform','platform-profile',monthFolder(file.updated_at),path.basename(String(file.logo_path)));
     if(await moveFile(String(file.logo_path),target))await connection.query('UPDATE platform_profile SET logo_path=? WHERE id=?',[target,file.id]);
   }
+  const[companyLogos]=await connection.query<mysql.RowDataPacket[]>('SELECT id,code,logo_path,updated_at FROM companies WHERE logo_path IS NOT NULL');
+  for(const file of companyLogos){
+    const recordedSource=String(file.logo_path),localLegacySource=path.join(uploadsRoot,'company-profile',path.basename(recordedSource));
+    const target=path.join(uploadsRoot,safeSegment(file.code,`company-${file.id}`),'company-profile',monthFolder(file.updated_at),path.basename(recordedSource));
+    const safeSource=insideUploads(recordedSource)?recordedSource:localLegacySource;
+    if(await moveFile(safeSource,target))await connection.query('UPDATE companies SET logo_path=? WHERE id=?',[target,file.id]);
+  }
   // Seed the first effective rate for installations that already used the
   // single monthly_fee field, then repair unpaid dues created with an earlier
   // mistaken amount. Paid value is never reduced or invalidated.

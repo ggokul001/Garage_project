@@ -3,6 +3,11 @@ import { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { execute, query, withTransaction } from '../config/db';
 import { masterConfigs, MasterConfig, MasterName } from './config';
 import { authenticate } from '../middleware/auth';
+import fs from 'node:fs';
+import path from 'node:path';
+import multer from 'multer';
+import {env} from '../config/env';
+import {companyStorage,isInsideUploads} from '../utils/uploadStorage';
 
 const router = Router();
 const isMaster = (value: string): value is MasterName => value in masterConfigs;
@@ -24,6 +29,17 @@ const requireMasterAction = (action:'VIEW'|'CREATE'|'UPDATE'|'DELETE') => (req:R
 };
 
 router.use(authenticate);
+
+const companyLogoUpload=multer({storage:companyStorage('company-profile',req=>Number(req.user?.company_id)),limits:{fileSize:env.maxUploadSizeMb*1024*1024,files:1},fileFilter:(_req,file,callback)=>['image/jpeg','image/png','image/webp'].includes(file.mimetype)?callback(null,true):callback(new Error('Company logo must be JPG, PNG or WEBP'))}).single('logo');
+async function companyBranding(companyId:number){
+  const rows=await query<RowDataPacket&Record<string,unknown>>('SELECT id,code,name,legal_name,gstin,pan,phone,email,website,address_line1,address_line2,city,state,pincode,logo_path,logo_mime_type FROM companies WHERE id=?',[companyId]),company=rows[0];
+  if(!company)return null;
+  let logo_data_url:string|null=null;
+  if(company.logo_path&&company.logo_mime_type){try{logo_data_url=`data:${company.logo_mime_type};base64,${fs.readFileSync(String(company.logo_path)).toString('base64')}`}catch{}}
+  return{...company,logo_data_url};
+}
+router.get('/company-branding',asyncRoute(async(req,res)=>{const data=await companyBranding(Number(req.user!.company_id));if(!data){res.status(404).json({message:'Company profile not found'});return}res.json({data})}));
+router.put('/company-branding/logo',companyLogoUpload,asyncRoute(async(req,res)=>{const file=req.file;if(!file){res.status(422).json({message:'Select a company logo'});return}const rows=await query<RowDataPacket&{logo_path:string|null}>('SELECT logo_path FROM companies WHERE id=?',[req.user!.company_id]);if(!rows[0]){try{fs.unlinkSync(file.path)}catch{}res.status(404).json({message:'Company profile not found'});return}await execute('UPDATE companies SET logo_path=?,logo_mime_type=? WHERE id=?',[file.path,file.mimetype,req.user!.company_id]);if(rows[0].logo_path&&isInsideUploads(rows[0].logo_path)&&path.resolve(rows[0].logo_path)!==path.resolve(file.path)){try{fs.unlinkSync(rows[0].logo_path)}catch{}}res.json({data:await companyBranding(Number(req.user!.company_id)),message:'Company logo updated'})}));
 
 router.param('master', (req, res, next, value) => {
   if (!isMaster(value)) return res.status(404).json({ message: 'Master not found' });
