@@ -5,6 +5,8 @@ import toast from 'react-hot-toast';
 import {Company,superAdminApi} from '../../api';
 import {Modal} from '../../components/Modal';
 import {PasswordField} from '../../components/PasswordField';
+import {ListPagination} from '../../components/ListPagination';
+import {useListQueryState} from '../../hooks/useListQueryState';
 import {PageTitle} from '../UsersPage';
 
 type AdminForm={full_name:string;username:string;email:string;password:string};
@@ -17,12 +19,13 @@ const editValues=(company:Company)=>({code:company.code,name:company.name,legal_
 
 export function CompaniesPage(){
   const qc=useQueryClient();
-  const [search,setSearch]=useState(''),[open,setOpen]=useState(false),[form,setForm]=useState<any>(empty);
+  const {page,pageSize,search,setPage,setPageSize,setSearch}=useListQueryState();
+  const [open,setOpen]=useState(false),[form,setForm]=useState<any>(empty);
   const [statusCompany,setStatusCompany]=useState<Company|null>(null),[reason,setReason]=useState('');
   const [trialCompany,setTrialCompany]=useState<Company|null>(null),[days,setDays]=useState(10);
   const [adminCompany,setAdminCompany]=useState<Company|null>(null),[adminForm,setAdminForm]=useState<AdminForm>(blankAdmin),[credentials,setCredentials]=useState<Credentials|null>(null);
   const [detailId,setDetailId]=useState<number|null>(null),[editCompany,setEditCompany]=useState<Company|null>(null),[editForm,setEditForm]=useState<any>({});
-  const companies=useQuery({queryKey:['super-companies',search],queryFn:()=>superAdminApi.companies({page:1,search})});
+  const companies=useQuery({queryKey:['super-companies',page,pageSize,search],queryFn:()=>superAdminApi.companies({page,pageSize,search})});
   const details=useQuery({queryKey:['super-company',detailId],queryFn:()=>superAdminApi.company(detailId!),enabled:detailId!==null});
   const refresh=()=>qc.invalidateQueries({queryKey:['super-companies']});
   const create=useMutation({mutationFn:()=>superAdminApi.createCompany(form),onSuccess:()=>{setCredentials({company:form.name,username:form.admin.username,password:form.admin.password});toast.success('Company and administrator created');setOpen(false);setForm({...empty,admin:{...blankAdmin}});refresh()},onError:(e:Error)=>toast.error(e.message)});
@@ -50,6 +53,7 @@ export function CompaniesPage(){
         <td><span className={company.status==='active'?'badge-active':'badge-inactive'}>{company.status}</span>{company.inactive_reason&&<div className="mt-1 max-w-48 text-xs text-fg-subtle">{company.inactive_reason}</div>}</td>
         <td><div className="flex justify-end gap-1"><button className="action" title="View full details" onClick={()=>setDetailId(company.id)}><Eye size={15}/></button><button className="action" title="Edit company" onClick={()=>launchEdit(company)}><Pencil size={15}/></button><button className="action" title={company.admin_username?'Reset admin credentials':'Create company admin'} onClick={()=>launchAdmin(company)}><KeyRound size={15}/></button>{company.account_type==='TRIAL'&&<><button className="action" title="Extend trial" onClick={()=>{setTrialCompany(company);setDays(10)}}><Clock3 size={15}/></button><button className="action" title="Convert to paid" onClick={()=>confirm(`Convert ${company.name} to paid?`)&&paid.mutate(company.id)}><CheckCircle2 size={15}/></button></>}<button className={`action ${company.status==='active'?'danger':''}`} title={company.status==='active'?'Inactivate':'Activate'} onClick={()=>{setStatusCompany(company);setReason(company.status==='active'?'Payment pending':'Payment received / access restored')}}>{company.status==='active'?<XCircle size={15}/>:<CheckCircle2 size={15}/>}</button></div></td>
       </tr>)}</tbody></table></div>
+      <ListPagination page={page} pageSize={pageSize} total={companies.data?.meta.total??0} onPageChange={setPage} onPageSizeChange={setPageSize}/>
     </div>
 
     <Modal open={open} onClose={()=>setOpen(false)} title="New Company" wide footer={<><button className="btn-secondary" onClick={()=>setOpen(false)}>Cancel</button><button className="btn-primary" form="company-form" disabled={create.isPending}>{create.isPending?'Creating...':'Create company'}</button></>}><form id="company-form" onSubmit={(e:FormEvent)=>{e.preventDefault();create.mutate()}} className="grid gap-4 sm:grid-cols-2"><Input label="Company code *" value={form.code} set={value=>field('code',value.toUpperCase())}/><Input label="Company name *" value={form.name} set={value=>field('name',value)}/><Input label="Legal name" value={form.legal_name} set={value=>field('legal_name',value)}/><Input label="Phone" value={form.phone} set={value=>field('phone',value)}/><Input label="Email" type="email" value={form.email} set={value=>field('email',value)}/><Input label="City" value={form.city} set={value=>field('city',value)}/><div><label className="label">Account type</label><select className="input" value={form.account_type} onChange={e=>field('account_type',e.target.value)}><option value="TRIAL">Trial</option><option value="PAID">Paid</option></select></div>{form.account_type==='TRIAL'&&<Input label="Trial days *" type="number" value={form.trial_days} set={value=>field('trial_days',Number(value))}/>}<Input label="Maximum users" type="number" value={form.max_users} set={value=>field('max_users',value?Number(value):null)}/><Input label="Maximum branches" type="number" value={form.max_branches} set={value=>field('max_branches',value?Number(value):null)}/><div className="sm:col-span-2 mt-2 border-t border-border pt-4"><h3 className="text-sm font-semibold">Initial Company Administrator</h3></div><Input label="Full name *" value={form.admin.full_name} set={value=>adminField('full_name',value)}/><Input label="Username *" value={form.admin.username} set={value=>adminField('username',value)}/><Input label="Email *" type="email" value={form.admin.email} set={value=>adminField('email',value)}/><div><PasswordField label="Temporary password *" value={form.admin.password} onChange={value=>adminField('password',value)} required/><button type="button" className="mt-2 flex items-center gap-1 text-xs text-primary" onClick={()=>adminField('password',makePassword())}><RefreshCw size={12}/>Generate password</button></div></form></Modal>

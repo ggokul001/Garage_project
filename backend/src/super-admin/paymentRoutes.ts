@@ -112,7 +112,7 @@ const paymentSchema=z.object({company_id:z.coerce.number().int().positive(),paym
 const cleanupFiles=(files:Express.Multer.File[])=>files.forEach(file=>{try{fs.unlinkSync(file.path)}catch{}});
 
 router.get('/super-admin/payments',asyncRoute(async(req,res)=>{
-  const page=Math.max(1,Number(req.query.page)||1),pageSize=20,companyId=Number(req.query.company_id)||0,search=String(req.query.search??'').trim(),from=String(req.query.from??''),to=String(req.query.to??'');
+  const page=Math.max(1,Number(req.query.page)||1),pageSize=Math.min(100,Math.max(10,Number(req.query.pageSize)||15)),companyId=Number(req.query.company_id)||0,search=String(req.query.search??'').trim(),from=String(req.query.from??''),to=String(req.query.to??'');
   const clauses=['p.deleted_at IS NULL'],params:unknown[]=[];
   if(companyId){clauses.push('p.company_id=?');params.push(companyId)}if(from){clauses.push('p.payment_date>=?');params.push(from)}if(to){clauses.push('p.payment_date<=?');params.push(to)}if(search){clauses.push('(p.payment_no LIKE ? OR c.name LIKE ? OR p.reference_number LIKE ? OR p.remarks LIKE ?)');params.push(...Array(4).fill(`%${search}%`))}
   const where=clauses.join(' AND '),count=await query<RowDataPacket&{total:number}>(`SELECT COUNT(*) total FROM company_payments p JOIN companies c ON c.id=p.company_id WHERE ${where}`,params);

@@ -86,7 +86,7 @@ router.delete('/roles/:id',authenticate,requirePermission('ROLE_DELETE'),asyncRo
 }));
 
 router.get('/users',authenticate,requirePermission('USER_VIEW'),asyncRoute(async(req,res)=>{
-  const page=Math.max(1,Number(req.query.page)||1),pageSize=15,search=String(req.query.search??'');const like=`%${search}%`;
+  const page=Math.max(1,Number(req.query.page)||1),pageSize=Math.min(100,Math.max(10,Number(req.query.pageSize)||15)),search=String(req.query.search??'');const like=`%${search}%`;
   const count=await query<RowDataPacket & {total:number}>('SELECT COUNT(*) total FROM users WHERE company_id=? AND (username LIKE ? OR full_name LIKE ? OR email LIKE ?)',[req.user!.company_id,like,like,like]);
   const rows=await query<RowDataPacket & Record<string,unknown>>(`SELECT u.id,u.username,u.email,u.full_name,u.role_id,u.branch_id,u.status,u.last_login_at,r.name role_name,b.name branch_name FROM users u JOIN roles r ON r.id=u.role_id LEFT JOIN branches b ON b.id=u.branch_id WHERE u.company_id=? AND (u.username LIKE ? OR u.full_name LIKE ? OR u.email LIKE ?) ORDER BY u.full_name LIMIT ? OFFSET ?`,[req.user!.company_id,like,like,like,pageSize,(page-1)*pageSize]);
   res.json({data:rows,meta:{page,pageSize,total:Number(count[0].total)}});

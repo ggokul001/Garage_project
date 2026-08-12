@@ -21,7 +21,7 @@ const companySchema=z.object({
 }).refine(value=>value.account_type!=='TRIAL'||!!value.trial_days,{message:'Trial days are required for a trial company'});
 
 router.get('/super-admin/companies',asyncRoute(async(req,res)=>{
-  const page=Math.max(1,Number(req.query.page)||1),size=20,search=`%${String(req.query.search??'')}%`,status=String(req.query.status??'');
+  const page=Math.max(1,Number(req.query.page)||1),size=Math.min(100,Math.max(10,Number(req.query.pageSize)||15)),search=`%${String(req.query.search??'')}%`,status=String(req.query.status??'');
   const clauses=['(c.code LIKE ? OR c.name LIKE ? OR c.email LIKE ?)'],params:unknown[]=[search,search,search];if(status){clauses.push('c.status=?');params.push(status)}
   const count=await query<RowDataPacket&{total:number}>(`SELECT COUNT(*) total FROM companies c WHERE ${clauses.join(' AND ')}`,params);
   const rows=await query<RowDataPacket&Record<string,unknown>>(`SELECT c.*,GREATEST(0,TIMESTAMPDIFF(DAY,NOW(),c.trial_ends_at)) trial_days_remaining,(SELECT COUNT(*) FROM users u WHERE u.company_id=c.id) user_count,(SELECT COUNT(*) FROM branches b WHERE b.company_id=c.id) branch_count,(SELECT u.full_name FROM users u JOIN roles r ON r.id=u.role_id WHERE u.company_id=c.id AND r.code IN ('ADMIN','COMPANY_ADMIN') ORDER BY u.id LIMIT 1) admin_name,(SELECT u.username FROM users u JOIN roles r ON r.id=u.role_id WHERE u.company_id=c.id AND r.code IN ('ADMIN','COMPANY_ADMIN') ORDER BY u.id LIMIT 1) admin_username,(SELECT u.email FROM users u JOIN roles r ON r.id=u.role_id WHERE u.company_id=c.id AND r.code IN ('ADMIN','COMPANY_ADMIN') ORDER BY u.id LIMIT 1) admin_email FROM companies c WHERE ${clauses.join(' AND ')} ORDER BY c.id DESC LIMIT ? OFFSET ?`,[...params,size,(page-1)*size]);
