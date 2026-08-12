@@ -101,7 +101,20 @@ router.post('/:master', requireMasterAction('CREATE'), asyncRoute(async (req, re
 
 router.put('/:master/:id', requireMasterAction('UPDATE'), asyncRoute(async (req, res) => {
   const master=req.params.master as MasterName,cfg: MasterConfig = masterConfigs[master];
-  if(master==='companies'){res.status(403).json({message:'Use Super Administrator company management'});return}
+  if(master==='companies'){
+    if(Number(req.params.id)!==Number(req.user!.company_id)){res.status(404).json({message:'Company profile not found'});return}
+    const before=await query<RowDataPacket&Record<string,unknown>>('SELECT * FROM companies WHERE id=?',[req.user!.company_id]);
+    if(!before[0]){res.status(404).json({message:'Company profile not found'});return}
+    res.locals.auditBefore=before[0];
+    // A company administrator may maintain profile/contact fields only. Account
+    // type, trial, access status and limits remain platform-admin controlled.
+    const parsed=cfg.schema.safeParse({...req.body,code:before[0].code,status:before[0].status});
+    if(!parsed.success){res.status(422).json({message:parsed.error.issues[0]?.message,errors:parsed.error.flatten().fieldErrors});return}
+    const d=parsed.data as Record<string,unknown>;
+    const profileColumns=['name','legal_name','gstin','pan','phone','email','website','address_line1','address_line2','city','state','pincode'];
+    await execute(`UPDATE companies SET ${profileColumns.map(column=>`${column}=?`).join(',')} WHERE id=?`,[...profileColumns.map(column=>d[column]??null),req.user!.company_id]);
+    res.json({message:'Company profile updated successfully'});return;
+  }
   const before=await query<RowDataPacket&Record<string,unknown>>(`SELECT m.* FROM ${cfg.table} m WHERE m.id=? AND m.company_id=?`,[req.params.id,req.user!.company_id]);
   if(!before[0]){res.status(404).json({message:'Record not found'});return}
   res.locals.auditBefore=before[0];

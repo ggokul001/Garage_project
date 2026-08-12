@@ -14,6 +14,7 @@ export function Dashboard({view='operations'}:{view?:'operations'|'md'}){
   const live=useQuery({queryKey:['dashboard',view,fy],queryFn:()=>accessApi.dashboard(fy??undefined,view),enabled:!!user});
   const data=live.data;
   if(live.isLoading)return <div className="grid min-h-[55vh] place-items-center text-sm text-fg-muted">Loading live dashboard…</div>;
+  if(live.isError)return <div className="grid min-h-[55vh] place-items-center"><div className="panel max-w-lg p-6 text-center"><AlertTriangle className="mx-auto text-danger"/><h2 className="mt-3 text-base font-semibold">Dashboard could not be loaded</h2><p className="mt-2 text-sm text-fg-muted">{live.error instanceof Error?live.error.message:'Please try again.'}</p><button className="btn-primary mt-4" onClick={()=>live.refetch()}>Try again</button></div></div>;
   if(!data||data.mode==='welcome')return <Welcome company={String(data?.company?.company_name??'Ara Garage')} name={user?.full_name??'User'}/>;
   return <div className="space-y-4">
     <PageTitle title={data.mode==='md'?'MD Dashboard':'Operations Dashboard'} subtitle={`Welcome back, ${user?.full_name??'User'}`} icon={Activity}/>
