@@ -50,7 +50,7 @@ export const accessApi={
   dashboard:async(financial_year_id:number|undefined,view:'operations'|'md')=>(await client.get('/dashboard',{params:{financial_year_id,view}})).data.data as Record<string,any>,
 };
 
-export type Company=RecordData&{code:string;name:string;legal_name?:string;account_type:'TRIAL'|'PAID';trial_started_at?:string;trial_ends_at?:string;inactive_reason?:string;inactive_at?:string;phone?:string;email?:string;website?:string;gstin?:string;pan?:string;address_line1?:string;address_line2?:string;city?:string;state?:string;pincode?:string;max_users?:number;max_branches?:number;user_count?:number;branch_count?:number;admin_name?:string;admin_username?:string;admin_email?:string;trial_days_remaining?:number};
+export type Company=RecordData&{code:string;name:string;legal_name?:string;account_type:'TRIAL'|'PAID';trial_started_at?:string;trial_ends_at?:string;inactive_reason?:string;inactive_at?:string;phone?:string;email?:string;website?:string;gstin?:string;pan?:string;address_line1?:string;address_line2?:string;city?:string;state?:string;pincode?:string;max_users?:number;max_branches?:number;billing_cycle?:'MONTHLY'|'ONE_TIME';monthly_fee?:number;billing_start_month?:string;billing_due_day?:number;user_count?:number;branch_count?:number;admin_name?:string;admin_username?:string;admin_email?:string;trial_days_remaining?:number};
 export const superAdminApi={
   companies:async(params:{page:number;search:string;status?:string})=>(await client.get('/super-admin/companies',{params})).data as {data:Company[];meta:{page:number;pageSize:number;total:number}},
   company:async(id:number)=>(await client.get(`/super-admin/companies/${id}`)).data.data as Company&{admins:RecordData[];history:RecordData[]},
@@ -60,6 +60,21 @@ export const superAdminApi={
   updateStatus:async(id:number,status:'active'|'inactive',reason:string)=>(await client.post(`/super-admin/companies/${id}/status`,{status,reason})).data,
   extendTrial:async(id:number,days:number)=>(await client.post(`/super-admin/companies/${id}/extend-trial`,{days})).data,
   convertPaid:async(id:number)=>(await client.post(`/super-admin/companies/${id}/convert-paid`)).data,
+};
+
+export const superAdminPaymentApi={
+  billingCompanies:async()=>(await client.get('/super-admin/billing/companies')).data.data as RecordData[],
+  saveBilling:async(id:number,data:Record<string,unknown>)=>(await client.put(`/super-admin/billing/companies/${id}`,data)).data,
+  companyDues:async(id:number)=>(await client.get(`/super-admin/billing/companies/${id}/dues`)).data.data as {company:RecordData;dues:RecordData[]},
+  payments:async(params:Record<string,unknown>)=>(await client.get('/super-admin/payments',{params})).data as {data:RecordData[];meta:{page:number;pageSize:number;total:number}},
+  payment:async(id:number)=>(await client.get(`/super-admin/payments/${id}`)).data.data as RecordData&{allocations:RecordData[];attachments:RecordData[]},
+  createPayment:async(data:Record<string,unknown>,files:File[])=>{const form=new FormData();form.append('data',JSON.stringify(data));files.forEach(file=>form.append('files',file));return(await client.post('/super-admin/payments',form)).data},
+  updatePayment:async(id:number,data:Record<string,unknown>)=>(await client.put(`/super-admin/payments/${id}`,data)).data,
+  removePayment:async(id:number)=>(await client.delete(`/super-admin/payments/${id}`)).data,
+  addAttachments:async(id:number,files:File[])=>{const form=new FormData();files.forEach(file=>form.append('files',file));return(await client.post(`/super-admin/payments/${id}/attachments`,form)).data},
+  removeAttachment:async(paymentId:number,id:number)=>(await client.delete(`/super-admin/payments/${paymentId}/attachments/${id}`)).data,
+  downloadAttachment:async(paymentId:number,id:number,name:string)=>{const response=await client.get(`/super-admin/payments/${paymentId}/attachments/${id}/download`,{responseType:'blob'});const url=URL.createObjectURL(response.data),anchor=document.createElement('a');anchor.href=url;anchor.download=name;anchor.click();URL.revokeObjectURL(url)},
+  report:async(params:Record<string,unknown>)=>(await client.get('/super-admin/payment-report',{params})).data.data as {payments:RecordData[];companies:RecordData[];summary:{payment_count:number;received_amount:number;outstanding_amount:number;pending_months:number}},
 };
 
 export const transactionApi={

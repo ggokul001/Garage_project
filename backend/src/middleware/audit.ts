@@ -22,6 +22,7 @@ function context(path: string, method: string) {
   if(entity==='attendance')action='SAVE';
   if(entity==='payroll'&&clean.includes('generate'))action='GENERATE';
   if(entity==='work-orders'&&clean.includes('attachments'))action=method==='DELETE'?'ATTACHMENT DELETE':'ATTACHMENT UPLOAD';
+  if(entity==='super-admin'&&parts[1]==='payments'){entity='company-payments';module='Super Admin Payments';if(clean.includes('attachments'))action=method==='DELETE'?'ATTACHMENT DELETE':'ATTACHMENT UPLOAD';}
   return {entity,module:module.replace(/\b\w/g,c=>c.toUpperCase()),action,parts};
 }
 
@@ -32,9 +33,10 @@ function displayName(body: Record<string,unknown>, responseBody: any, fallback: 
 
 async function beforeSnapshot(entity:string,parts:string[],body:Record<string,unknown>){
   let numeric=[...parts].reverse().find(value=>/^\d+$/.test(value));
-  const simple:Record<string,string>={'job-cards':'job_cards','work-orders':'work_orders',stores:'store_entries','vendor-payments':'vendor_payments','salary-advances':'salary_advances',users:'users',roles:'roles'};
+  const simple:Record<string,string>={'job-cards':'job_cards','work-orders':'work_orders',stores:'store_entries','vendor-payments':'vendor_payments','company-payments':'company_payments','salary-advances':'salary_advances',users:'users',roles:'roles'};
   if(entity==='accounts'&&parts[1]==='receipts'&&numeric){const rows=await query<RowDataPacket&Record<string,unknown>>('SELECT * FROM payment_receipts WHERE id=?',[numeric]);return{recordId:String(rows[0]?.job_card_id??numeric),snapshot:rows[0]}}
   if(entity==='work-orders'&&parts[2]==='attachments')numeric=parts[1];
+  if(entity==='company-payments'&&parts[3]==='attachments')numeric=parts[2];
   if(entity==='attendance'&&body.attendance_date&&body.branch_id){const rows=await query<RowDataPacket&Record<string,unknown>>('SELECT * FROM daily_attendance WHERE attendance_date=? AND branch_id=?',[body.attendance_date,body.branch_id]);return{recordId:`${body.attendance_date}-${body.branch_id}`,snapshot:{rows}}}
   if(entity==='payroll'&&body.salary_month&&body.branch_id){const runs=await query<RowDataPacket&Record<string,unknown>>('SELECT * FROM payroll_runs WHERE salary_month=? AND branch_id=?',[body.salary_month,body.branch_id]);return{recordId:String(runs[0]?.id??''),snapshot:runs[0]}}
   const table=simple[entity];if(!table||!numeric)return{recordId:numeric,snapshot:null};

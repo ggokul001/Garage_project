@@ -809,6 +809,10 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS inactive_reason VARCHAR(255) NULL
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS inactive_at DATETIME NULL AFTER inactive_reason;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS max_users INT UNSIGNED NULL AFTER inactive_at;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS max_branches INT UNSIGNED NULL AFTER max_users;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing_cycle ENUM('MONTHLY','ONE_TIME') NOT NULL DEFAULT 'MONTHLY' AFTER max_branches;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS monthly_fee DECIMAL(14,2) NOT NULL DEFAULT 0 AFTER billing_cycle;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing_start_month DATE NULL AFTER monthly_fee;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing_due_day TINYINT UNSIGNED NOT NULL DEFAULT 10 AFTER billing_start_month;
 
 ALTER TABLE roles ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
@@ -862,6 +866,85 @@ CREATE TABLE IF NOT EXISTS company_status_history (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_company_status_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
   CONSTRAINT fk_company_status_user FOREIGN KEY (changed_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS platform_sequences (
+  sequence_name VARCHAR(50) PRIMARY KEY,
+  last_number BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS company_monthly_dues (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_id BIGINT UNSIGNED NOT NULL,
+  billing_month DATE NOT NULL,
+  due_date DATE NOT NULL,
+  due_amount DECIMAL(14,2) NOT NULL,
+  paid_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+  status ENUM('PENDING','PARTIAL','PAID') NOT NULL DEFAULT 'PENDING',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_company_monthly_due (company_id,billing_month),
+  KEY idx_company_dues_status (company_id,status,billing_month),
+  CONSTRAINT fk_company_dues_company FOREIGN KEY(company_id) REFERENCES companies(id) ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS company_payments (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  payment_no VARCHAR(30) NOT NULL UNIQUE,
+  company_id BIGINT UNSIGNED NOT NULL,
+  payment_date DATE NOT NULL,
+  amount DECIMAL(14,2) NOT NULL,
+  payment_mode ENUM('CASH','UPI','BANK_TRANSFER','CHEQUE','CARD','OTHER') NOT NULL DEFAULT 'BANK_TRANSFER',
+  reference_number VARCHAR(100) NULL,
+  remarks VARCHAR(500) NULL,
+  created_by BIGINT UNSIGNED NOT NULL,
+  updated_by BIGINT UNSIGNED NULL,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_company_payments_company_date (company_id,payment_date),
+  KEY idx_company_payments_deleted (deleted_at),
+  CONSTRAINT fk_company_payments_company FOREIGN KEY(company_id) REFERENCES companies(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_company_payments_created_by FOREIGN KEY(created_by) REFERENCES users(id),
+  CONSTRAINT fk_company_payments_updated_by FOREIGN KEY(updated_by) REFERENCES users(id),
+  CONSTRAINT fk_company_payments_deleted_by FOREIGN KEY(deleted_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS company_payment_allocations (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_id BIGINT UNSIGNED NOT NULL,
+  payment_id BIGINT UNSIGNED NOT NULL,
+  due_id BIGINT UNSIGNED NOT NULL,
+  amount DECIMAL(14,2) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_company_payment_due (payment_id,due_id),
+  KEY idx_payment_allocations_company (company_id),
+  CONSTRAINT fk_payment_allocations_company FOREIGN KEY(company_id) REFERENCES companies(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_payment_allocations_payment FOREIGN KEY(payment_id) REFERENCES company_payments(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_payment_allocations_due FOREIGN KEY(due_id) REFERENCES company_monthly_dues(id) ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS company_payment_attachments (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_id BIGINT UNSIGNED NOT NULL,
+  payment_id BIGINT UNSIGNED NOT NULL,
+  original_name VARCHAR(255) NOT NULL,
+  stored_name VARCHAR(255) NOT NULL,
+  file_path VARCHAR(500) NOT NULL,
+  mime_type VARCHAR(120) NOT NULL,
+  file_size BIGINT UNSIGNED NOT NULL,
+  uploaded_by BIGINT UNSIGNED NOT NULL,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_payment_attachments_payment (payment_id,deleted_at),
+  KEY idx_payment_attachments_company (company_id),
+  CONSTRAINT fk_payment_attachments_company FOREIGN KEY(company_id) REFERENCES companies(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_payment_attachments_payment FOREIGN KEY(payment_id) REFERENCES company_payments(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_payment_attachments_uploaded_by FOREIGN KEY(uploaded_by) REFERENCES users(id),
+  CONSTRAINT fk_payment_attachments_deleted_by FOREIGN KEY(deleted_by) REFERENCES users(id)
 ) ENGINE=InnoDB;
 
 INSERT IGNORE INTO roles (code,name,description,is_system,company_id) VALUES

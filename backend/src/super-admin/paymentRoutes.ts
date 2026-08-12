@@ -1,0 +1,157 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {NextFunction,Request,Response,Router} from 'express';
+import multer from 'multer';
+import {ResultSetHeader,RowDataPacket} from 'mysql2/promise';
+import {z} from 'zod';
+import {env} from '../config/env';
+import {execute,query,withTransaction} from '../config/db';
+import {authenticate,requireSuperAdmin} from '../middleware/auth';
+
+const router=Router();
+const asyncRoute=(handler:(req:Request,res:Response)=>Promise<void>)=>(req:Request,res:Response,next:NextFunction)=>handler(req,res).catch(next);
+router.use('/super-admin',authenticate,requireSuperAdmin);
+
+const uploadRoot=path.resolve(env.uploadDir,'company-payments');
+fs.mkdirSync(uploadRoot,{recursive:true});
+const allowedExtensions=new Set(['.pdf','.jpg','.jpeg','.png','.xls','.xlsx']);
+const upload=multer({
+  storage:multer.diskStorage({destination:(_req,_file,callback)=>callback(null,uploadRoot),filename:(_req,file,callback)=>callback(null,`${Date.now()}-${Math.random().toString(36).slice(2)}${path.extname(file.originalname).toLowerCase()}`)}),
+  limits:{fileSize:env.maxUploadSizeMb*1024*1024,files:10},
+  fileFilter:(_req,file,callback)=>allowedExtensions.has(path.extname(file.originalname).toLowerCase())?callback(null,true):callback(new Error('Only PDF, JPG, PNG, XLS and XLSX files are allowed')),
+}).array('files',10);
+
+type CompanyBillingRow=RowDataPacket&{id:number;account_type:'TRIAL'|'PAID';billing_cycle:'MONTHLY'|'ONE_TIME';monthly_fee:number;billing_start_month:string|null;billing_due_day:number};
+const monthDate=(date:Date)=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-01`;
+const dueDate=(year:number,month:number,day:number)=>{const last=new Date(year,month+1,0).getDate();return `${year}-${String(month+1).padStart(2,'0')}-${String(Math.min(day,last)).padStart(2,'0')}`};
+
+async function syncCompanyDues(companyId:number){
+  const companies=await query<CompanyBillingRow>('SELECT id,account_type,billing_cycle,monthly_fee,billing_start_month,billing_due_day FROM companies WHERE id=?',[companyId]);
+  const company=companies[0];
+  if(!company||company.account_type!=='PAID'||company.billing_cycle!=='MONTHLY'||Number(company.monthly_fee)<=0||!company.billing_start_month)return;
+  const startParts=String(company.billing_start_month).slice(0,10).split('-').map(Number),start=new Date(startParts[0],startParts[1]-1,1),now=new Date(),end=new Date(now.getFullYear(),now.getMonth(),1);
+  const months=(end.getFullYear()-start.getFullYear())*12+end.getMonth()-start.getMonth();
+  if(months<0)return;
+  if(months>240)throw new Error('Billing start month cannot be more than 20 years in the past');
+  for(let index=0;index<=months;index++){
+    const current=new Date(start.getFullYear(),start.getMonth()+index,1);
+    await execute('INSERT IGNORE INTO company_monthly_dues(company_id,billing_month,due_date,due_amount)VALUES(?,?,?,?)',[companyId,monthDate(current),dueDate(current.getFullYear(),current.getMonth(),Number(company.billing_due_day)||10),Number(company.monthly_fee)]);
+  }
+}
+
+async function syncAllDues(){
+  const companies=await query<RowDataPacket&{id:number}>("SELECT id FROM companies WHERE account_type='PAID' AND billing_cycle='MONTHLY' AND monthly_fee>0 AND billing_start_month IS NOT NULL");
+  for(const company of companies)await syncCompanyDues(Number(company.id));
+}
+
+const billingSchema=z.object({
+  billing_cycle:z.enum(['MONTHLY','ONE_TIME']),monthly_fee:z.coerce.number().min(0),billing_start_month:z.union([z.string().regex(/^\d{4}-\d{2}(-\d{2})?$/),z.literal(''),z.null()]).nullish(),billing_due_day:z.coerce.number().int().min(1).max(28),
+}).superRefine((value,context)=>{if(value.billing_cycle==='MONTHLY'&&value.monthly_fee>0&&!value.billing_start_month)context.addIssue({code:z.ZodIssueCode.custom,path:['billing_start_month'],message:'Billing start month is required for monthly billing'})});
+
+router.get('/super-admin/billing/companies',asyncRoute(async(_req,res)=>{
+  await syncAllDues();
+  const rows=await query<RowDataPacket&Record<string,unknown>>(`SELECT c.id,c.code,c.name,c.status,c.account_type,c.billing_cycle,c.monthly_fee,c.billing_start_month,c.billing_due_day,
+    COUNT(d.id) due_months,SUM(d.status='PAID') paid_months,SUM(d.status='PARTIAL') partial_months,SUM(d.status='PENDING') pending_months,
+    COALESCE(SUM(d.due_amount),0) billed_amount,COALESCE(SUM(d.paid_amount),0) allocated_amount,COALESCE(SUM(d.due_amount-d.paid_amount),0) outstanding_amount,
+    MAX(CASE WHEN d.status='PAID' THEN d.billing_month END) paid_until,
+    (SELECT COALESCE(SUM(p.amount),0) FROM company_payments p WHERE p.company_id=c.id AND p.deleted_at IS NULL) total_received,
+    (SELECT MAX(p.payment_date) FROM company_payments p WHERE p.company_id=c.id AND p.deleted_at IS NULL) last_payment_date
+    FROM companies c LEFT JOIN company_monthly_dues d ON d.company_id=c.id GROUP BY c.id ORDER BY c.name`);
+  res.json({data:rows});
+}));
+
+router.put('/super-admin/billing/companies/:id',asyncRoute(async(req,res)=>{
+  const parsed=billingSchema.safeParse(req.body);if(!parsed.success){res.status(422).json({message:parsed.error.issues[0]?.message});return}
+  const data=parsed.data,start=data.billing_start_month?`${String(data.billing_start_month).slice(0,7)}-01`:null;
+  const result=await execute('UPDATE companies SET billing_cycle=?,monthly_fee=?,billing_start_month=?,billing_due_day=? WHERE id=?',[data.billing_cycle,data.monthly_fee,start,data.billing_due_day,req.params.id]);
+  if(!result.affectedRows){res.status(404).json({message:'Company not found'});return}
+  await syncCompanyDues(Number(req.params.id));
+  res.json({message:'Company billing settings updated'});
+}));
+
+router.get('/super-admin/billing/companies/:id/dues',asyncRoute(async(req,res)=>{
+  await syncCompanyDues(Number(req.params.id));
+  const company=await query<RowDataPacket&Record<string,unknown>>('SELECT id,code,name,account_type,billing_cycle,monthly_fee,billing_start_month,billing_due_day FROM companies WHERE id=?',[req.params.id]);
+  if(!company[0]){res.status(404).json({message:'Company not found'});return}
+  const dues=await query<RowDataPacket&Record<string,unknown>>('SELECT *,GREATEST(due_amount-paid_amount,0) balance FROM company_monthly_dues WHERE company_id=? ORDER BY billing_month',[req.params.id]);
+  res.json({data:{company:company[0],dues}});
+}));
+
+const paymentSchema=z.object({company_id:z.coerce.number().int().positive(),payment_date:z.string().date(),amount:z.coerce.number().positive(),payment_mode:z.enum(['CASH','UPI','BANK_TRANSFER','CHEQUE','CARD','OTHER']),reference_number:z.string().trim().max(100).nullish(),remarks:z.string().trim().min(2).max(500),due_ids:z.array(z.coerce.number().int().positive()).default([])});
+const cleanupFiles=(files:Express.Multer.File[])=>files.forEach(file=>{try{fs.unlinkSync(file.path)}catch{}});
+
+router.get('/super-admin/payments',asyncRoute(async(req,res)=>{
+  const page=Math.max(1,Number(req.query.page)||1),pageSize=20,companyId=Number(req.query.company_id)||0,search=String(req.query.search??'').trim(),from=String(req.query.from??''),to=String(req.query.to??'');
+  const clauses=['p.deleted_at IS NULL'],params:unknown[]=[];
+  if(companyId){clauses.push('p.company_id=?');params.push(companyId)}if(from){clauses.push('p.payment_date>=?');params.push(from)}if(to){clauses.push('p.payment_date<=?');params.push(to)}if(search){clauses.push('(p.payment_no LIKE ? OR c.name LIKE ? OR p.reference_number LIKE ? OR p.remarks LIKE ?)');params.push(...Array(4).fill(`%${search}%`))}
+  const where=clauses.join(' AND '),count=await query<RowDataPacket&{total:number}>(`SELECT COUNT(*) total FROM company_payments p JOIN companies c ON c.id=p.company_id WHERE ${where}`,params);
+  const rows=await query<RowDataPacket&Record<string,unknown>>(`SELECT p.*,c.code company_code,c.name company_name,u.full_name created_by_name,
+    (SELECT COUNT(*) FROM company_payment_attachments a WHERE a.payment_id=p.id AND a.deleted_at IS NULL) attachment_count,
+    (SELECT GROUP_CONCAT(DATE_FORMAT(d.billing_month,'%b %Y') ORDER BY d.billing_month SEPARATOR ', ') FROM company_payment_allocations a JOIN company_monthly_dues d ON d.id=a.due_id WHERE a.payment_id=p.id) allocated_months
+    FROM company_payments p JOIN companies c ON c.id=p.company_id JOIN users u ON u.id=p.created_by WHERE ${where} ORDER BY p.payment_date DESC,p.id DESC LIMIT ? OFFSET ?`,[...params,pageSize,(page-1)*pageSize]);
+  res.json({data:rows,meta:{page,pageSize,total:Number(count[0]?.total??0)}});
+}));
+
+router.get('/super-admin/payments/:id',asyncRoute(async(req,res)=>{
+  const payments=await query<RowDataPacket&Record<string,unknown>>('SELECT p.*,c.code company_code,c.name company_name,u.full_name created_by_name FROM company_payments p JOIN companies c ON c.id=p.company_id JOIN users u ON u.id=p.created_by WHERE p.id=? AND p.deleted_at IS NULL',[req.params.id]);
+  if(!payments[0]){res.status(404).json({message:'Payment not found'});return}
+  const allocations=await query<RowDataPacket&Record<string,unknown>>('SELECT a.id,a.amount,d.billing_month,d.due_date,d.due_amount,d.paid_amount,d.status FROM company_payment_allocations a JOIN company_monthly_dues d ON d.id=a.due_id WHERE a.payment_id=? ORDER BY d.billing_month',[req.params.id]);
+  const attachments=await query<RowDataPacket&Record<string,unknown>>('SELECT id,original_name,mime_type,file_size,created_at FROM company_payment_attachments WHERE payment_id=? AND deleted_at IS NULL ORDER BY id',[req.params.id]);
+  res.json({data:{...payments[0],allocations,attachments}});
+}));
+
+router.post('/super-admin/payments',upload,asyncRoute(async(req,res)=>{
+  const files=(req.files as Express.Multer.File[])??[];let raw:unknown={};try{raw=JSON.parse(String(req.body.data??'{}'))}catch{cleanupFiles(files);res.status(422).json({message:'Invalid payment form data'});return}
+  const parsed=paymentSchema.safeParse(raw);if(!parsed.success){cleanupFiles(files);res.status(422).json({message:parsed.error.issues[0]?.message});return}
+  const data=parsed.data;await syncCompanyDues(data.company_id);
+  try{
+    const created=await withTransaction(async connection=>{
+      const[companies]=await connection.query<CompanyBillingRow[]>('SELECT id,account_type,billing_cycle,monthly_fee,billing_start_month,billing_due_day FROM companies WHERE id=? FOR UPDATE',[data.company_id]);
+      if(!companies[0])throw new Error('Company not found');
+      const dueIds=[...new Set(data.due_ids)],monthly=companies[0].account_type==='PAID'&&companies[0].billing_cycle==='MONTHLY'&&Number(companies[0].monthly_fee)>0&&!!companies[0].billing_start_month;
+      if(monthly&&!dueIds.length)throw new Error('Select at least one pending billing month');
+      let dues:RowDataPacket[]=[];
+      if(dueIds.length){const[rows]=await connection.query<RowDataPacket[]>(`SELECT * FROM company_monthly_dues WHERE company_id=? AND id IN (${dueIds.map(()=>'?').join(',')}) ORDER BY billing_month FOR UPDATE`,[data.company_id,...dueIds]);dues=rows;if(dues.length!==dueIds.length)throw new Error('One or more billing months are invalid')}
+      const outstanding=dues.reduce((sum,due)=>sum+Math.max(0,Number(due.due_amount)-Number(due.paid_amount)),0);
+      if(monthly&&data.amount>outstanding+0.001)throw new Error('Payment amount cannot exceed the selected months outstanding amount');
+      await connection.execute('INSERT IGNORE INTO platform_sequences(sequence_name,last_number)VALUES("COMPANY_PAYMENT",0)');
+      const[sequences]=await connection.query<RowDataPacket[]>('SELECT last_number FROM platform_sequences WHERE sequence_name="COMPANY_PAYMENT" FOR UPDATE'),next=Number(sequences[0].last_number)+1;
+      await connection.execute('UPDATE platform_sequences SET last_number=? WHERE sequence_name="COMPANY_PAYMENT"',[next]);
+      const paymentNo=`PAY-${new Date(data.payment_date+'T00:00:00').getFullYear()}-${String(next).padStart(6,'0')}`;
+      const[out]=await connection.execute<ResultSetHeader>('INSERT INTO company_payments(payment_no,company_id,payment_date,amount,payment_mode,reference_number,remarks,created_by)VALUES(?,?,?,?,?,?,?,?)',[paymentNo,data.company_id,data.payment_date,data.amount,data.payment_mode,data.reference_number||null,data.remarks,req.user!.id]);
+      let remaining=Number(data.amount);
+      for(const due of dues){if(remaining<=0)break;const balance=Math.max(0,Number(due.due_amount)-Number(due.paid_amount)),allocated=Math.min(balance,remaining);if(allocated<=0)continue;const paid=Number(due.paid_amount)+allocated,status=paid+0.001>=Number(due.due_amount)?'PAID':'PARTIAL';await connection.execute('INSERT INTO company_payment_allocations(company_id,payment_id,due_id,amount)VALUES(?,?,?,?)',[data.company_id,out.insertId,due.id,allocated]);await connection.execute('UPDATE company_monthly_dues SET paid_amount=?,status=? WHERE id=?',[paid,status,due.id]);remaining-=allocated}
+      if(monthly&&remaining>0.001)throw new Error('Payment amount could not be fully allocated to the selected months');
+      for(const file of files)await connection.execute('INSERT INTO company_payment_attachments(company_id,payment_id,original_name,stored_name,file_path,mime_type,file_size,uploaded_by)VALUES(?,?,?,?,?,?,?,?)',[data.company_id,out.insertId,file.originalname,file.filename,file.path,file.mimetype,file.size,req.user!.id]);
+      return{id:out.insertId,payment_no:paymentNo};
+    });
+    res.status(201).json({data:created,message:`Payment ${created.payment_no} created`});
+  }catch(error){cleanupFiles(files);throw error}
+}));
+
+const paymentEditSchema=z.object({payment_date:z.string().date(),payment_mode:z.enum(['CASH','UPI','BANK_TRANSFER','CHEQUE','CARD','OTHER']),reference_number:z.string().trim().max(100).nullish(),remarks:z.string().trim().min(2).max(500)});
+router.put('/super-admin/payments/:id',asyncRoute(async(req,res)=>{const parsed=paymentEditSchema.safeParse(req.body);if(!parsed.success){res.status(422).json({message:parsed.error.issues[0]?.message});return}const data=parsed.data,result=await execute('UPDATE company_payments SET payment_date=?,payment_mode=?,reference_number=?,remarks=?,updated_by=? WHERE id=? AND deleted_at IS NULL',[data.payment_date,data.payment_mode,data.reference_number||null,data.remarks,req.user!.id,req.params.id]);if(!result.affectedRows){res.status(404).json({message:'Payment not found'});return}res.json({message:'Payment details updated'})}));
+
+router.post('/super-admin/payments/:id/attachments',upload,asyncRoute(async(req,res)=>{const files=(req.files as Express.Multer.File[])??[],payments=await query<RowDataPacket&{id:number;company_id:number}>('SELECT id,company_id FROM company_payments WHERE id=? AND deleted_at IS NULL',[req.params.id]);if(!payments[0]){cleanupFiles(files);res.status(404).json({message:'Payment not found'});return}for(const file of files)await execute('INSERT INTO company_payment_attachments(company_id,payment_id,original_name,stored_name,file_path,mime_type,file_size,uploaded_by)VALUES(?,?,?,?,?,?,?,?)',[payments[0].company_id,req.params.id,file.originalname,file.filename,file.path,file.mimetype,file.size,req.user!.id]);res.status(201).json({message:`${files.length} attachment(s) uploaded`})}));
+
+router.get('/super-admin/payments/:paymentId/attachments/:id/download',asyncRoute(async(req,res)=>{const rows=await query<RowDataPacket&{file_path:string;original_name:string}>('SELECT file_path,original_name FROM company_payment_attachments WHERE id=? AND payment_id=? AND deleted_at IS NULL',[req.params.id,req.params.paymentId]);if(!rows[0]){res.status(404).json({message:'Attachment not found'});return}const resolved=path.resolve(rows[0].file_path);if(resolved!==uploadRoot&&!resolved.startsWith(`${uploadRoot}${path.sep}`)){res.status(403).json({message:'Invalid attachment path'});return}res.download(resolved,rows[0].original_name)}));
+
+router.delete('/super-admin/payments/:paymentId/attachments/:id',asyncRoute(async(req,res)=>{const result=await execute('UPDATE company_payment_attachments SET deleted_at=NOW(),deleted_by=? WHERE id=? AND payment_id=? AND deleted_at IS NULL',[req.user!.id,req.params.id,req.params.paymentId]);if(!result.affectedRows){res.status(404).json({message:'Attachment not found'});return}res.json({message:'Attachment removed'})}));
+
+router.delete('/super-admin/payments/:id',asyncRoute(async(req,res)=>{
+  await withTransaction(async connection=>{const[payments]=await connection.query<RowDataPacket[]>('SELECT id FROM company_payments WHERE id=? AND deleted_at IS NULL FOR UPDATE',[req.params.id]);if(!payments[0])throw new Error('Payment not found');const[allocations]=await connection.query<RowDataPacket[]>('SELECT * FROM company_payment_allocations WHERE payment_id=? FOR UPDATE',[req.params.id]);for(const allocation of allocations){const[dues]=await connection.query<RowDataPacket[]>('SELECT * FROM company_monthly_dues WHERE id=? FOR UPDATE',[allocation.due_id]);if(!dues[0])continue;const paid=Math.max(0,Number(dues[0].paid_amount)-Number(allocation.amount)),status=paid<=0?'PENDING':paid+0.001>=Number(dues[0].due_amount)?'PAID':'PARTIAL';await connection.execute('UPDATE company_monthly_dues SET paid_amount=?,status=? WHERE id=?',[paid,status,allocation.due_id])}await connection.execute('DELETE FROM company_payment_allocations WHERE payment_id=?',[req.params.id]);await connection.execute('UPDATE company_payment_attachments SET deleted_at=NOW(),deleted_by=? WHERE payment_id=? AND deleted_at IS NULL',[req.user!.id,req.params.id]);await connection.execute('UPDATE company_payments SET deleted_at=NOW(),deleted_by=? WHERE id=?',[req.user!.id,req.params.id])});res.json({message:'Payment deleted and monthly allocations reversed'})
+}));
+
+router.get('/super-admin/payment-report',asyncRoute(async(req,res)=>{
+  await syncAllDues();
+  const companyId=Number(req.query.company_id)||0,from=String(req.query.from??''),to=String(req.query.to??''),mode=String(req.query.payment_mode??''),search=String(req.query.search??'').trim(),clauses=['p.deleted_at IS NULL'],params:unknown[]=[];
+  if(companyId){clauses.push('p.company_id=?');params.push(companyId)}if(from){clauses.push('p.payment_date>=?');params.push(from)}if(to){clauses.push('p.payment_date<=?');params.push(to)}if(mode){clauses.push('p.payment_mode=?');params.push(mode)}if(search){clauses.push('(p.payment_no LIKE ? OR c.name LIKE ? OR p.reference_number LIKE ? OR p.remarks LIKE ?)');params.push(...Array(4).fill(`%${search}%`))}
+  const payments=await query<RowDataPacket&Record<string,unknown>>(`SELECT p.payment_no,p.payment_date,c.code company_code,c.name company_name,p.amount,p.payment_mode,p.reference_number,p.remarks,u.full_name created_by_name,p.created_at,(SELECT COUNT(*) FROM company_payment_attachments a WHERE a.payment_id=p.id AND a.deleted_at IS NULL) attachment_count,(SELECT GROUP_CONCAT(DATE_FORMAT(d.billing_month,'%b %Y') ORDER BY d.billing_month SEPARATOR ', ') FROM company_payment_allocations a JOIN company_monthly_dues d ON d.id=a.due_id WHERE a.payment_id=p.id) allocated_months FROM company_payments p JOIN companies c ON c.id=p.company_id JOIN users u ON u.id=p.created_by WHERE ${clauses.join(' AND ')} ORDER BY p.payment_date DESC,p.id DESC LIMIT 5000`,params);
+  const totals=await query<RowDataPacket&{payment_count:number;received_amount:number}>(`SELECT COUNT(*) payment_count,COALESCE(SUM(p.amount),0) received_amount FROM company_payments p JOIN companies c ON c.id=p.company_id WHERE ${clauses.join(' AND ')}`,params);
+  const companyWhere=companyId?'WHERE c.id=?':'',companyParams=companyId?[companyId]:[];
+  const companies=await query<RowDataPacket&Record<string,unknown>>(`SELECT c.id company_id,c.code company_code,c.name company_name,c.account_type,c.billing_cycle,c.monthly_fee,c.billing_start_month,c.billing_due_day,COUNT(d.id) due_months,SUM(d.status='PAID') paid_months,SUM(d.status='PARTIAL') partial_months,SUM(d.status='PENDING') pending_months,COALESCE(SUM(d.due_amount),0) billed_amount,COALESCE(SUM(d.paid_amount),0) paid_amount,COALESCE(SUM(d.due_amount-d.paid_amount),0) outstanding_amount,MAX(CASE WHEN d.status='PAID' THEN d.billing_month END) paid_until,(SELECT MAX(p.payment_date) FROM company_payments p WHERE p.company_id=c.id AND p.deleted_at IS NULL) last_payment_date FROM companies c LEFT JOIN company_monthly_dues d ON d.company_id=c.id ${companyWhere} GROUP BY c.id ORDER BY outstanding_amount DESC,c.name`,companyParams);
+  const outstanding=companies.reduce((sum,row)=>sum+Number(row.outstanding_amount??0),0),pendingMonths=companies.reduce((sum,row)=>sum+Number(row.pending_months??0)+Number(row.partial_months??0),0);
+  res.json({data:{payments,companies,summary:{payment_count:Number(totals[0]?.payment_count??0),received_amount:Number(totals[0]?.received_amount??0),outstanding_amount:outstanding,pending_months:pendingMonths}}});
+}));
+
+export default router;
