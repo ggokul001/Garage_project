@@ -24,6 +24,38 @@ async function migrate() {
   }
   await connection.query(`USE ${mysql.escapeId(env.db.database)}`);
   await connection.query(sql);
+  const uploadsRoot=path.resolve(env.uploadDir);
+  const safeSegment=(value:unknown,fallback:string)=>String(value??'').trim().replace(/[^a-zA-Z0-9_-]+/g,'-').replace(/^-+|-+$/g,'')||fallback;
+  const insideUploads=(value:string)=>{const resolved=path.resolve(value);return resolved!==uploadsRoot&&resolved.startsWith(`${uploadsRoot}${path.sep}`)};
+  const monthFolder=(value:unknown)=>{const date=value instanceof Date?value:new Date(String(value));const valid=Number.isNaN(date.getTime())?new Date():date;return `${valid.getFullYear()}-${String(valid.getMonth()+1).padStart(2,'0')}`};
+  const moveFile=async(source:string,target:string)=>{
+    if(!insideUploads(source)||!insideUploads(target))throw new Error('Refusing to migrate a file outside the configured uploads directory');
+    if(path.resolve(source)===path.resolve(target))return true;
+    try{await fs.access(source)}catch{try{await fs.access(target);return true}catch{return false}}
+    await fs.mkdir(path.dirname(target),{recursive:true});
+    try{await fs.rename(source,target)}catch(error){if((error as NodeJS.ErrnoException).code!=='EXDEV')throw error;await fs.copyFile(source,target);await fs.unlink(source)}
+    return true;
+  };
+  const[storedFiles]=await connection.query<mysql.RowDataPacket[]>(`
+    SELECT 'work_order_attachments' source_table,a.id,a.file_path,a.stored_name,a.created_at,c.code company_code,'work-orders' module_name
+    FROM work_order_attachments a JOIN companies c ON c.id=a.company_id
+    UNION ALL
+    SELECT 'company_payment_attachments',a.id,a.file_path,a.stored_name,a.created_at,c.code,'company-payments'
+    FROM company_payment_attachments a JOIN companies c ON c.id=a.company_id`);
+  for(const file of storedFiles){
+    const target=path.join(uploadsRoot,safeSegment(file.company_code,`company-${file.id}`),safeSegment(file.module_name,'general'),monthFolder(file.created_at),path.basename(String(file.stored_name)));
+    const recordedSource=String(file.file_path),localLegacySource=path.join(uploadsRoot,safeSegment(file.module_name,'general'),path.basename(String(file.stored_name)));
+    // Some imported databases retain absolute paths from the previous server.
+    // Never read/move that outside path; recover only from this installation's
+    // local legacy module folder when the recorded path is outside uploadRoot.
+    const safeSource=insideUploads(recordedSource)?recordedSource:localLegacySource;
+    if(await moveFile(safeSource,target))await connection.query(`UPDATE ${mysql.escapeId(String(file.source_table))} SET file_path=? WHERE id=?`,[target,file.id]);
+  }
+  const[profileFiles]=await connection.query<mysql.RowDataPacket[]>('SELECT id,logo_path,updated_at FROM platform_profile WHERE logo_path IS NOT NULL');
+  for(const file of profileFiles){
+    const target=path.join(uploadsRoot,'platform','platform-profile',monthFolder(file.updated_at),path.basename(String(file.logo_path)));
+    if(await moveFile(String(file.logo_path),target))await connection.query('UPDATE platform_profile SET logo_path=? WHERE id=?',[target,file.id]);
+  }
   // Seed the first effective rate for installations that already used the
   // single monthly_fee field, then repair unpaid dues created with an earlier
   // mistaken amount. Paid value is never reduced or invalidated.

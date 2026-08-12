@@ -2,11 +2,10 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { RowDataPacket, PoolConnection, ResultSetHeader } from 'mysql2/promise';
 import { z } from 'zod';
 import multer from 'multer';
-import path from 'node:path';
-import fs from 'node:fs';
 import { authenticate, requirePermission } from '../middleware/auth';
 import { execute, query, withTransaction } from '../config/db';
 import { env } from '../config/env';
+import {companyStorage} from '../utils/uploadStorage';
 const router = Router();
 router.use(authenticate);
 const asyncRoute = (fn: (req: Request, res: Response) => Promise<void>) => (req: Request, res: Response, next: NextFunction) => fn(req, res).catch(next);
@@ -153,10 +152,8 @@ router.post('/work-orders/:id/approve', requirePermission('WORK_ORDER_APPROVE'),
     throw new Error('Mechanic is required for every complaint'); if (complaints.some(c => c.status === 'pending' && !c.pending_sub_status_id))
     throw new Error('Pending sub-status is required for pending complaints'); const [files] = await conn.query<RowDataPacket[]>('SELECT COUNT(*) count FROM work_order_attachments WHERE work_order_id=? AND deleted_at IS NULL', [req.params.id]); if (!Number(files[0].count))
     throw new Error('At least one signed attachment is mandatory'); const progress = await workProgress(conn, Number(req.params.id)); await conn.execute('UPDATE work_orders SET approval_status="approved",overall_status=?,approved_at=NOW(),approved_by=?,updated_by=? WHERE id=?', [progress, req.user!.id, req.user!.id, req.params.id]); await conn.execute('UPDATE job_cards SET status=? WHERE id=?', [progress === 'completed' ? 'completed' : 'in_progress', order.job_card_id]); }); res.json({ message: 'Work Order approved' }); }));
-const uploadRoot = path.resolve(env.uploadDir, 'work-orders');
-fs.mkdirSync(uploadRoot, { recursive: true });
 const allowed = new Set(['application/pdf', 'image/jpeg', 'image/png']);
-const upload = multer({ storage: multer.diskStorage({ destination: (_r, _f, cb) => cb(null, uploadRoot), filename: (_r, f, cb) => cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${path.extname(f.originalname).toLowerCase()}`) }), limits: { fileSize: env.maxUploadSizeMb * 1024 * 1024, files: 10 }, fileFilter: (_r, f, cb) => allowed.has(f.mimetype) ? cb(null, true) : cb(new Error('Only PDF, JPG and PNG files are allowed')) }).array('files', 10);
+const upload = multer({ storage: companyStorage('work-orders',async req=>{const companyId=Number(req.user?.company_id),owner=await query<RowDataPacket>('SELECT id FROM work_orders WHERE id=? AND company_id=? AND deleted_at IS NULL',[req.params.id,companyId]);if(!owner[0])throw new Error('Work Order not found');return companyId}), limits: { fileSize: env.maxUploadSizeMb * 1024 * 1024, files: 10 }, fileFilter: (_r, f, cb) => allowed.has(f.mimetype) ? cb(null, true) : cb(new Error('Only PDF, JPG and PNG files are allowed')) }).array('files', 10);
 router.post('/work-orders/:id/attachments', requirePermission('WORK_ORDER_UPDATE'), upload, asyncRoute(async (req, res) => { const owner=await query<RowDataPacket>('SELECT id FROM work_orders WHERE id=? AND company_id=?',[req.params.id,req.user!.company_id]);if(!owner[0]){res.status(404).json({message:'Work Order not found'});return}const files = (req.files as Express.Multer.File[]) ?? []; for (const file of files)
     await execute('INSERT INTO work_order_attachments(company_id,work_order_id,original_name,stored_name,file_path,mime_type,file_size,uploaded_by) VALUES(?,?,?,?,?,?,?,?)', [req.user!.company_id,req.params.id, file.originalname, file.filename, file.path, file.mimetype, file.size, req.user!.id]); res.status(201).json({ message: `${files.length} attachment(s) uploaded` }); }));
 router.delete('/work-orders/:workOrderId/attachments/:id', requirePermission('WORK_ORDER_UPDATE'), asyncRoute(async (req, res) => { await execute('UPDATE work_order_attachments SET deleted_at=NOW(),deleted_by=? WHERE id=? AND work_order_id=? AND company_id=?', [req.user!.id, req.params.id, req.params.workOrderId,req.user!.company_id]); res.json({ message: 'Attachment deleted' }); }));

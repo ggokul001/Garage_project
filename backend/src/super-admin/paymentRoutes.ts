@@ -7,22 +7,25 @@ import {z} from 'zod';
 import {env} from '../config/env';
 import {execute,query,withTransaction} from '../config/db';
 import {authenticate,requireSuperAdmin} from '../middleware/auth';
+import {companyStorage,isInsideUploads,platformStorage} from '../utils/uploadStorage';
 
 const router=Router();
 const asyncRoute=(handler:(req:Request,res:Response)=>Promise<void>)=>(req:Request,res:Response,next:NextFunction)=>handler(req,res).catch(next);
 router.use('/super-admin',authenticate,requireSuperAdmin);
 
-const uploadRoot=path.resolve(env.uploadDir,'company-payments');
-fs.mkdirSync(uploadRoot,{recursive:true});
 const allowedExtensions=new Set(['.pdf','.jpg','.jpeg','.png','.xls','.xlsx']);
+const paymentCompanyId=async(req:Request)=>{
+  if(req.body.data){try{const companyId=Number(JSON.parse(String(req.body.data)).company_id);if(companyId>0)return companyId}catch{}}
+  const paymentId=Number(req.params.id||req.params.paymentId);
+  if(paymentId>0){const rows=await query<RowDataPacket&{company_id:number}>('SELECT company_id FROM company_payments WHERE id=? AND deleted_at IS NULL',[paymentId]);if(rows[0])return Number(rows[0].company_id)}
+  throw new Error('Select a company before uploading payment files');
+};
 const upload=multer({
-  storage:multer.diskStorage({destination:(_req,_file,callback)=>callback(null,uploadRoot),filename:(_req,file,callback)=>callback(null,`${Date.now()}-${Math.random().toString(36).slice(2)}${path.extname(file.originalname).toLowerCase()}`)}),
+  storage:companyStorage('company-payments',paymentCompanyId),
   limits:{fileSize:env.maxUploadSizeMb*1024*1024,files:10},
   fileFilter:(_req,file,callback)=>allowedExtensions.has(path.extname(file.originalname).toLowerCase())?callback(null,true):callback(new Error('Only PDF, JPG, PNG, XLS and XLSX files are allowed')),
 }).array('files',10);
-const profileRoot=path.resolve(env.uploadDir,'platform-profile');
-fs.mkdirSync(profileRoot,{recursive:true});
-const logoUpload=multer({storage:multer.diskStorage({destination:(_req,_file,callback)=>callback(null,profileRoot),filename:(_req,file,callback)=>callback(null,`logo-${Date.now()}${path.extname(file.originalname).toLowerCase()}`)}),limits:{fileSize:env.maxUploadSizeMb*1024*1024,files:1},fileFilter:(_req,file,callback)=>['image/jpeg','image/png','image/webp'].includes(file.mimetype)?callback(null,true):callback(new Error('Logo must be JPG, PNG or WEBP'))}).single('logo');
+const logoUpload=multer({storage:platformStorage('platform-profile'),limits:{fileSize:env.maxUploadSizeMb*1024*1024,files:1},fileFilter:(_req,file,callback)=>['image/jpeg','image/png','image/webp'].includes(file.mimetype)?callback(null,true):callback(new Error('Logo must be JPG, PNG or WEBP'))}).single('logo');
 
 const profileSchema=z.object({organization_name:z.string().trim().min(2).max(180),legal_name:z.string().trim().max(180).nullish(),gstin:z.string().trim().max(15).nullish(),pan:z.string().trim().max(10).nullish(),phone:z.string().trim().max(20).nullish(),email:z.union([z.string().trim().email(),z.literal(''),z.null()]).nullish(),website:z.union([z.string().trim().url(),z.literal(''),z.null()]).nullish(),address_line1:z.string().trim().max(180).nullish(),address_line2:z.string().trim().max(180).nullish(),city:z.string().trim().max(80).nullish(),state:z.string().trim().max(80).nullish(),pincode:z.string().trim().max(10).nullish(),receipt_prefix:z.string().trim().min(2).max(30),receipt_footer:z.string().trim().max(500).nullish()});
 async function profileData(){const rows=await query<RowDataPacket&Record<string,unknown>>('SELECT * FROM platform_profile WHERE id=1'),profile=rows[0];if(!profile)return null;let logo_data_url:string|null=null;if(profile.logo_path&&profile.logo_mime_type){try{const data=fs.readFileSync(String(profile.logo_path));logo_data_url=`data:${profile.logo_mime_type};base64,${data.toString('base64')}`}catch{}}return{...profile,logo_data_url}}
@@ -162,7 +165,7 @@ router.put('/super-admin/payments/:id',asyncRoute(async(req,res)=>{const parsed=
 
 router.post('/super-admin/payments/:id/attachments',upload,asyncRoute(async(req,res)=>{const files=(req.files as Express.Multer.File[])??[],payments=await query<RowDataPacket&{id:number;company_id:number}>('SELECT id,company_id FROM company_payments WHERE id=? AND deleted_at IS NULL',[req.params.id]);if(!payments[0]){cleanupFiles(files);res.status(404).json({message:'Payment not found'});return}for(const file of files)await execute('INSERT INTO company_payment_attachments(company_id,payment_id,original_name,stored_name,file_path,mime_type,file_size,uploaded_by)VALUES(?,?,?,?,?,?,?,?)',[payments[0].company_id,req.params.id,file.originalname,file.filename,file.path,file.mimetype,file.size,req.user!.id]);res.status(201).json({message:`${files.length} attachment(s) uploaded`})}));
 
-router.get('/super-admin/payments/:paymentId/attachments/:id/download',asyncRoute(async(req,res)=>{const rows=await query<RowDataPacket&{file_path:string;original_name:string}>('SELECT file_path,original_name FROM company_payment_attachments WHERE id=? AND payment_id=? AND deleted_at IS NULL',[req.params.id,req.params.paymentId]);if(!rows[0]){res.status(404).json({message:'Attachment not found'});return}const resolved=path.resolve(rows[0].file_path);if(resolved!==uploadRoot&&!resolved.startsWith(`${uploadRoot}${path.sep}`)){res.status(403).json({message:'Invalid attachment path'});return}res.download(resolved,rows[0].original_name)}));
+router.get('/super-admin/payments/:paymentId/attachments/:id/download',asyncRoute(async(req,res)=>{const rows=await query<RowDataPacket&{file_path:string;original_name:string}>('SELECT file_path,original_name FROM company_payment_attachments WHERE id=? AND payment_id=? AND deleted_at IS NULL',[req.params.id,req.params.paymentId]);if(!rows[0]){res.status(404).json({message:'Attachment not found'});return}const resolved=path.resolve(rows[0].file_path);if(!isInsideUploads(resolved)){res.status(403).json({message:'Invalid attachment path'});return}res.download(resolved,rows[0].original_name)}));
 
 router.delete('/super-admin/payments/:paymentId/attachments/:id',asyncRoute(async(req,res)=>{const result=await execute('UPDATE company_payment_attachments SET deleted_at=NOW(),deleted_by=? WHERE id=? AND payment_id=? AND deleted_at IS NULL',[req.user!.id,req.params.id,req.params.paymentId]);if(!result.affectedRows){res.status(404).json({message:'Attachment not found'});return}res.json({message:'Attachment removed'})}));
 
