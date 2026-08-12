@@ -43,7 +43,10 @@ router.post('/auth/change-password',authenticate,asyncRoute(async(req,res)=>{
 }));
 
 router.get('/navigation',authenticate,asyncRoute(async(req,res)=>{
-  if(req.user!.is_super_admin){res.json({data:[{id:-1,parent_id:null,title:'Companies',route:'/super-admin/companies',icon:'Building2',permission_code:null,sort_order:1,children:[]}]});return}
+  if(req.user!.is_super_admin){res.json({data:[
+    {id:-1,parent_id:null,title:'Companies',route:'/super-admin/companies',icon:'Building2',permission_code:null,sort_order:1,children:[]},
+    {id:-2,parent_id:null,title:'User Guide',route:'/user-guide',icon:'BookOpen',permission_code:null,sort_order:2,children:[]},
+  ]});return}
   const rows=await query<RowDataPacket & Record<string,unknown>>(`SELECT id,parent_id,title,route,icon,permission_code,sort_order FROM navigation_items WHERE status='active' ORDER BY sort_order,title`);
   const allowed=rows.filter(row=>!row.permission_code||req.user!.permissions.includes(String(row.permission_code))) as Array<Record<string, any>>;
   const parents: Array<Record<string, any>>=allowed.filter(row=>!row.parent_id).map(parent=>({...parent,children:allowed.filter(row=>Number(row.parent_id)===Number(parent.id))}));

@@ -27,6 +27,130 @@ import {
   Wrench,
 } from 'lucide-react';
 import { PageTitle } from './UsersPage';
+import { useAuth } from '../authStore';
+
+const superAdminGuides = [
+  {
+    title: 'Super Administrator Scope & Sidebar',
+    icon: Shield,
+    summary: 'Understand platform-level access and the two Super Admin menus.',
+    steps: [
+      'Sign in with the Super Administrator account. This is a platform account and does not belong to any customer company.',
+      'Companies opens the complete tenant-management workspace. User Guide opens this platform handbook.',
+      'Super Admin can view every company, create tenants, manage trials, edit subscriptions, provision administrators and control company access.',
+      'Super Admin does not use customer masters or entries; operational data remains inside the respective company login.',
+    ],
+  },
+  {
+    title: 'Companies List — Reading Every Column',
+    icon: Building2,
+    summary: 'Use the company register to understand account, trial, administrator, usage and access position.',
+    steps: [
+      'Company shows the tenant name, unique company code and primary email or phone.',
+      'Account shows TRIAL or PAID. Trial shows remaining days and the expiry date; paid companies do not have automatic expiry.',
+      'Administrator shows the company administrator name and username. “Not created” means login credentials have not yet been provisioned.',
+      'Usage shows the current number of users and branches against the company limits.',
+      'Status shows Active or Inactive and the recorded reason. Search can find a company by name, code or contact.',
+    ],
+  },
+  {
+    title: 'Create a New Company',
+    icon: Building2,
+    summary: 'Create the tenant, subscription and first company administrator together.',
+    steps: [
+      'Click New company and enter a unique Company Code, Company Name and available legal/contact details.',
+      'Choose TRIAL when the customer needs evaluation access, or PAID for a subscribed customer.',
+      'For TRIAL, enter the allowed trial days. The trial starts immediately after company creation.',
+      'Optionally set Maximum Users and Maximum Branches; leave them empty for no configured limit.',
+      'Enter the initial Company Administrator full name, unique username, email and temporary password.',
+      'Click Create company. The system creates the company, head-office branch, default setup masters, current financial year and administrator login.',
+    ],
+  },
+  {
+    title: 'Administrator Credentials & First Login',
+    icon: UserCog,
+    summary: 'Securely hand over the company administrator login.',
+    steps: [
+      'After company or administrator creation, copy the username and temporary password from the one-time credentials window.',
+      'The stored password cannot be viewed later because only its secure hash is retained.',
+      'Share credentials through a secure channel. On first login, the administrator is forced to change the temporary password.',
+      'After password change, the session closes and the administrator must sign in again using the new password.',
+      'Use the Key action when an administrator was not created or when credentials must be reset. The new temporary password is again shown only once.',
+    ],
+  },
+  {
+    title: 'Trial Lifecycle & Automatic Expiry',
+    icon: Clock3,
+    summary: 'Control evaluation access without manually checking expiry dates.',
+    steps: [
+      'A trial company remains Active until its Trial End date and time.',
+      'When the trial period ends, the system automatically changes the company to Inactive with the reason “Trial period expired”.',
+      'After expiry, the company administrator, all company users and existing sessions are blocked. Company data is retained.',
+      'Click the Clock action and enter additional days to extend a trial. Extension starts from the later of the current expiry or current time and restores Active access.',
+      'Click the check action to convert the tenant to PAID. This removes automatic trial expiry and restores Active access.',
+    ],
+  },
+  {
+    title: 'View Full Company Details',
+    icon: Search,
+    summary: 'Inspect profile, limits, administrators and access history before making changes.',
+    steps: [
+      'Click the Eye action in the company row.',
+      'Review legal/contact information, account type, access status, trial expiry and user/branch limits.',
+      'Review all company administrators with username, email, status and last-login time.',
+      'Review Access History for creation, activation, inactivation, trial extension and paid-conversion reasons.',
+    ],
+  },
+  {
+    title: 'Edit Company & Subscription Details',
+    icon: BadgeCheck,
+    summary: 'Correct company details and manage platform-controlled account fields.',
+    steps: [
+      'Click the Pencil action to edit company code, name, legal details, contact, website, GSTIN, PAN and registered address.',
+      'Change Account Type only when the commercial plan changes. A TRIAL account requires a valid Trial Ends At value.',
+      'Set Maximum Users and Maximum Branches to enforce plan limits, or leave them empty for unlimited access.',
+      'Access Status and Inactive Reason are platform controls. Use a clear reason whenever access is blocked.',
+      'Company administrators can edit only their own profile fields; they cannot change account type, trial, status or plan limits.',
+    ],
+  },
+  {
+    title: 'Manual Activate / Inactivate',
+    icon: Shield,
+    summary: 'Manually control access for payment or administrative reasons.',
+    steps: [
+      'For a PAID company, non-payment does not automatically suspend access.',
+      'Click the red Inactivate action, enter a meaningful reason such as Payment pending, and confirm.',
+      'Inactivation immediately blocks the company administrator, all users and existing authenticated requests. No business data is deleted.',
+      'To restore access, click Activate, enter the restoration reason and confirm.',
+      'Every status change is recorded in the company Access History with the Super Admin user and timestamp.',
+    ],
+  },
+  {
+    title: 'Tenant Isolation & Safety Checks',
+    icon: Network,
+    summary: 'Keep every company’s masters, users and entries fully separated.',
+    steps: [
+      'Every tenant master and entry is stored with its Company ID and every API request is filtered by the signed-in user’s company.',
+      'A Company Administrator sees only its own Company Profile, branches, users, masters, entries, dashboards and reports.',
+      'A company user may be assigned one branch or All branches. All branches is stored as unrestricted company-branch access, not as branch number zero.',
+      'Never share one company administrator login with another tenant. Create or reset the administrator from the correct company row.',
+      'Before inactivation, conversion or credential reset, use the Eye action and confirm the company code and administrator username.',
+    ],
+  },
+  {
+    title: 'Recommended Super Admin Operating Checklist',
+    icon: ClipboardList,
+    summary: 'Follow this sequence for consistent customer onboarding and support.',
+    steps: [
+      'Create company → choose Trial/Paid → set limits → create initial administrator.',
+      'Copy and securely share the one-time credentials; ask the administrator to complete first-login password change.',
+      'Verify the Administrator and Usage columns after onboarding.',
+      'For trials, monitor remaining days and extend or convert to paid only after approval.',
+      'For paid-account issues, manually inactivate with a reason and reactivate after resolution.',
+      'Use View Details and Access History during customer support; preserve tenant data instead of deleting company records.',
+    ],
+  },
+];
 
 const guides = [
   {
@@ -35,9 +159,10 @@ const guides = [
     summary: 'Follow the correct setup sequence before starting daily entries.',
     steps: [
       'Sign in and select Light, Dark or System theme from the header.',
-      'Recommended order: Financial Year → Company → Branch → Department → Designation → Employee.',
+      'Recommended order: review Company Profile → Financial Year → Branch → Department → Designation → Employee.',
       'Then create Customers, Vendors, Vehicles, UOM, Products, Pending Sub-status and Shifts.',
-      'Finally configure Roles, Users and permissions before starting entries.',
+      'Finally configure Roles, Users, branch access and permissions before starting entries.',
+      'A first-time user must change the temporary password and then sign in again with the new password.',
       'Select the correct Financial Year in the header; every operational entry is maintained financial-year wise.',
     ],
   },
@@ -52,13 +177,14 @@ const guides = [
     ],
   },
   {
-    title: 'Company Master',
+    title: 'Company Profile',
     icon: Building2,
     summary: 'Maintain legal entity, tax, contact and registered address details.',
     steps: [
-      'Open Masters → Companies and create the company first.',
-      'Enter the company code, name, GSTIN, PAN, contact and address details.',
-      'Company information is used by branches, departments, documents and dashboards.',
+      'Open Masters → Company Profile to view the company assigned to your login.',
+      'Use Edit to maintain name, legal name, GSTIN, PAN, contact, website and registered address details.',
+      'Company Code is system-controlled. Account type, trial period, access status and plan limits can be changed only by Super Admin.',
+      'Company information is used by branches, documents and dashboards; another company’s profile is never visible.',
     ],
   },
   {
@@ -66,7 +192,7 @@ const guides = [
     icon: GitBranch,
     summary: 'Define head office and service-centre locations.',
     steps: [
-      'Select the parent company and enter a unique branch code.',
+      'Create each operating location under your company; the branch code is generated automatically.',
       'Maintain address, contact and status for each location.',
       'Mark only the primary location as Head Office.',
     ],
@@ -86,7 +212,7 @@ const guides = [
     icon: UserCog,
     summary: 'Maintain staff, organization mapping and payroll values.',
     steps: [
-      'Select company, branch, department and designation.',
+      'Select branch, department and designation within your company.',
       'Enter employee code, name, contact, joining and emergency details.',
       'For payroll employees, enable Payroll Applicable and enter Monthly Salary and OT Rate.',
       'Mechanics selected in Work Orders are fetched from this master.',
@@ -149,7 +275,8 @@ const guides = [
     summary: 'Control menus, dashboards and actions using role and user permissions.',
     steps: [
       'Create a role and enable only the modules and actions required for that role.',
-      'Create the login user, assign role and branch, then verify effective permissions.',
+      'Create the login user and assign a role. Select one branch for branch-specific access or All branches for company-wide branch access.',
+      'A temporary password is mandatory for a new user. The user must change it on first login and then sign in again.',
       'Use User Overrides only for exceptional user-specific Allow or Deny access.',
       'Dashboard and MD Dashboard have separate access; without dashboard access, only the company welcome view is shown.',
     ],
@@ -323,20 +450,22 @@ const guides = [
 ];
 
 export function UserGuidePage() {
+  const superAdmin = useAuth((state) => state.user?.role_code === 'SUPER_ADMIN');
   const [search, setSearch] = useState('');
   const normalizedSearch = search.trim().toLowerCase();
-  const list = guides.filter((guide) =>
+  const handbook = superAdmin ? superAdminGuides : guides;
+  const list = handbook.filter((guide) =>
     `${guide.title} ${guide.summary} ${guide.steps.join(' ')}`.toLowerCase().includes(normalizedSearch),
   );
 
   return (
     <div>
-      <PageTitle title="User Guide" subtitle="Complete Ara Garage application handbook" icon={BookOpen} />
+      <PageTitle title={superAdmin?'Super Admin User Guide':'User Guide'} subtitle={superAdmin?'Complete company, trial and access-management handbook':'Complete Ara Garage company workspace handbook'} icon={BookOpen} />
       <div className="guide-hero">
         <div>
-          <span>KNOWLEDGE BASE</span>
-          <h2>How can we help you?</h2>
-          <p>Search every master, entry, calculation, report and access flow.</p>
+          <span>{superAdmin?'PLATFORM ADMINISTRATION':'KNOWLEDGE BASE'}</span>
+          <h2>{superAdmin?'Manage every company with confidence':'How can we help you?'}</h2>
+          <p>{superAdmin?'Search company onboarding, trials, credentials, limits and access controls.':'Search every master, entry, calculation, report and access flow.'}</p>
         </div>
         <div className="relative mt-6 max-w-xl">
           <Search className="absolute left-4 top-3.5 text-slate-400" size={17} />
