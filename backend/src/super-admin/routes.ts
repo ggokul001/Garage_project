@@ -21,7 +21,7 @@ router.get('/super-admin/companies',asyncRoute(async(req,res)=>{
   const page=Math.max(1,Number(req.query.page)||1),size=20,search=`%${String(req.query.search??'')}%`,status=String(req.query.status??'');
   const clauses=['(c.code LIKE ? OR c.name LIKE ? OR c.email LIKE ?)'],params:unknown[]=[search,search,search];if(status){clauses.push('c.status=?');params.push(status)}
   const count=await query<RowDataPacket&{total:number}>(`SELECT COUNT(*) total FROM companies c WHERE ${clauses.join(' AND ')}`,params);
-  const rows=await query<RowDataPacket&Record<string,unknown>>(`SELECT c.*,GREATEST(0,TIMESTAMPDIFF(DAY,NOW(),c.trial_ends_at)) trial_days_remaining,(SELECT COUNT(*) FROM users u WHERE u.company_id=c.id) user_count,(SELECT COUNT(*) FROM branches b WHERE b.company_id=c.id) branch_count,(SELECT u.full_name FROM users u JOIN roles r ON r.id=u.role_id WHERE u.company_id=c.id AND r.code IN ('ADMIN','COMPANY_ADMIN') ORDER BY u.id LIMIT 1) admin_name FROM companies c WHERE ${clauses.join(' AND ')} ORDER BY c.id DESC LIMIT ? OFFSET ?`,[...params,size,(page-1)*size]);
+  const rows=await query<RowDataPacket&Record<string,unknown>>(`SELECT c.*,GREATEST(0,TIMESTAMPDIFF(DAY,NOW(),c.trial_ends_at)) trial_days_remaining,(SELECT COUNT(*) FROM users u WHERE u.company_id=c.id) user_count,(SELECT COUNT(*) FROM branches b WHERE b.company_id=c.id) branch_count,(SELECT u.full_name FROM users u JOIN roles r ON r.id=u.role_id WHERE u.company_id=c.id AND r.code IN ('ADMIN','COMPANY_ADMIN') ORDER BY u.id LIMIT 1) admin_name,(SELECT u.username FROM users u JOIN roles r ON r.id=u.role_id WHERE u.company_id=c.id AND r.code IN ('ADMIN','COMPANY_ADMIN') ORDER BY u.id LIMIT 1) admin_username,(SELECT u.email FROM users u JOIN roles r ON r.id=u.role_id WHERE u.company_id=c.id AND r.code IN ('ADMIN','COMPANY_ADMIN') ORDER BY u.id LIMIT 1) admin_email FROM companies c WHERE ${clauses.join(' AND ')} ORDER BY c.id DESC LIMIT ? OFFSET ?`,[...params,size,(page-1)*size]);
   res.json({data:rows,meta:{page,pageSize:size,total:Number(count[0]?.total??0)}});
 }));
 
@@ -30,6 +30,27 @@ router.get('/super-admin/companies/:id',asyncRoute(async(req,res)=>{
   const admins=await query<RowDataPacket&Record<string,unknown>>(`SELECT u.id,u.full_name,u.username,u.email,u.status,u.last_login_at FROM users u JOIN roles r ON r.id=u.role_id WHERE u.company_id=? AND r.code IN ('ADMIN','COMPANY_ADMIN') ORDER BY u.id`,[req.params.id]);
   const history=await query<RowDataPacket&Record<string,unknown>>('SELECT h.*,u.full_name changed_by_name FROM company_status_history h LEFT JOIN users u ON u.id=h.changed_by WHERE h.company_id=? ORDER BY h.id DESC LIMIT 100',[req.params.id]);
   res.json({data:{...rows[0],admins,history}});
+}));
+
+const adminSchema=z.object({full_name:z.string().trim().min(2).max(150),username:z.string().trim().min(3).max(60),email:z.string().trim().email(),password:z.string().min(8).max(100)});
+router.post('/super-admin/companies/:id/admin',asyncRoute(async(req,res)=>{
+  const parsed=adminSchema.safeParse(req.body);if(!parsed.success){res.status(422).json({message:parsed.error.issues[0].message});return}const data=parsed.data,companyId=Number(req.params.id);
+  const companyRows=await query<RowDataPacket&{id:number}>('SELECT id FROM companies WHERE id=?',[companyId]);if(!companyRows[0]){res.status(404).json({message:'Company not found'});return}
+  const result=await withTransaction(async connection=>{
+    let[branches]=await connection.query<RowDataPacket[]>('SELECT id FROM branches WHERE company_id=? ORDER BY is_head_office DESC,id LIMIT 1',[companyId]);
+    let branchId=Number(branches[0]?.id);if(!branchId){const[out]=await connection.execute<ResultSetHeader>('INSERT INTO branches(company_id,code,name,is_head_office,status)VALUES(?,"BR-001","Head Office",1,"active")',[companyId]);branchId=out.insertId}
+    await connection.execute('INSERT IGNORE INTO departments(company_id,code,name,status)VALUES(?,"DEP-001","Operations","active")',[companyId]);
+    await connection.execute('INSERT IGNORE INTO designations(company_id,code,name,status)VALUES(?,"DES-001","Manager","active")',[companyId]);
+    await connection.execute('INSERT IGNORE INTO uoms(company_id,code,name,description,status)VALUES(?,"NOS","Numbers","Individual count","active")',[companyId]);
+    await connection.execute('INSERT IGNORE INTO work_pending_sub_statuses(company_id,code,name,status)VALUES(?,"WAIT_CUSTOMER_APPROVAL","WAIT FOR CUSTOMER APPROVAL","active"),(?,"PARTS_UNAVAILABLE","PARTS WAITING / UNAVAILABLE","active")',[companyId,companyId]);
+    await connection.execute('INSERT IGNORE INTO shifts(company_id,code,name,in_time,out_time,working_hours,status)VALUES(?,"GENERAL","General Shift","09:30:00","18:30:00",8,"active"),(?,"MORNING","Morning Shift","06:00:00","14:00:00",8,"active"),(?,"EVENING","Evening Shift","14:00:00","22:00:00",8,"active")',[companyId,companyId,companyId]);
+    const today=new Date(),fyStart=today.getMonth()>=3?today.getFullYear():today.getFullYear()-1,fyCode=`${fyStart}-${String(fyStart+1).slice(-2)}`;
+    await connection.execute('INSERT IGNORE INTO financial_years(company_id,code,name,start_date,end_date,is_current,status)VALUES(?,?,?,?,?,1,"active")',[companyId,fyCode,fyCode,`${fyStart}-04-01`,`${fyStart+1}-03-31`]);
+    const[roles]=await connection.query<RowDataPacket[]>("SELECT id FROM roles WHERE code='ADMIN' LIMIT 1"),[admins]=await connection.query<RowDataPacket[]>(`SELECT u.id FROM users u JOIN roles r ON r.id=u.role_id WHERE u.company_id=? AND r.code IN ('ADMIN','COMPANY_ADMIN') ORDER BY u.id LIMIT 1 FOR UPDATE`,[companyId]);
+    const passwordHash=await bcrypt.hash(data.password,12);if(admins[0])await connection.execute('UPDATE users SET username=?,email=?,full_name=?,password_hash=?,role_id=?,branch_id=?,status="active",must_change_password=1 WHERE id=? AND company_id=?',[data.username,data.email,data.full_name,passwordHash,roles[0].id,branchId,admins[0].id,companyId]);else await connection.execute('INSERT INTO users(company_id,username,email,full_name,password_hash,role_id,branch_id,status,must_change_password)VALUES(?,?,?,?,?,?,?,"active",1)',[companyId,data.username,data.email,data.full_name,passwordHash,roles[0].id,branchId]);
+    return{username:data.username,email:data.email,created:!admins[0]};
+  });
+  res.json({data:result,message:result.created?'Company Administrator created':'Company Administrator credentials reset'});
 }));
 
 router.post('/super-admin/companies',asyncRoute(async(req,res)=>{
