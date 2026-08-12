@@ -64,12 +64,12 @@ export async function auditMiddleware(req:Request,res:Response,next:NextFunction
     void (async()=>{try{
       let submitted:unknown=action==='CREATE'&&data&&typeof data==='object'?{...body,...data}:body;
       if(action!=='CREATE'&&req.method!=='DELETE'){const after=await beforeSnapshot(entity,parts,body);if(after.snapshot)submitted=after.snapshot}
-      await execute('INSERT INTO audit_logs(module_name,entity_type,record_id,record_display_name,action,route,old_values,new_values,user_id,ip_address,user_agent) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[
-        module,entity,recordId||null,displayName(body,responseBody,recordId||entity),action,req.originalUrl,
+      await execute('INSERT INTO audit_logs(company_id,module_name,entity_type,record_id,record_display_name,action,route,old_values,new_values,user_id,ip_address,user_agent) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',[
+        actor.company_id,module,entity,recordId||null,displayName(body,responseBody,recordId||entity),action,req.originalUrl,
         res.locals.auditBefore?JSON.stringify(safeValue(res.locals.auditBefore)):null,
         req.method==='DELETE'?null:JSON.stringify(safeValue(submitted)),actor.id,req.ip??null,String(req.headers['user-agent']??'').slice(0,500)||null,
       ]);
-      if(entity==='job-cards'&&action==='APPROVE'&&data?.id&&data?.work_order_no)await execute('INSERT INTO audit_logs(module_name,entity_type,record_id,record_display_name,action,route,new_values,user_id,ip_address,user_agent) VALUES(?,?,?,?,?,?,?,?,?,?)',['Work Orders','work-orders',String(data.id),String(data.work_order_no),'CREATE',req.originalUrl,JSON.stringify(safeValue(data)),actor.id,req.ip??null,String(req.headers['user-agent']??'').slice(0,500)||null]);
+      if(entity==='job-cards'&&action==='APPROVE'&&data?.id&&data?.work_order_no)await execute('INSERT INTO audit_logs(company_id,module_name,entity_type,record_id,record_display_name,action,route,new_values,user_id,ip_address,user_agent) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[actor.company_id,'Work Orders','work-orders',String(data.id),String(data.work_order_no),'CREATE',req.originalUrl,JSON.stringify(safeValue(data)),actor.id,req.ip??null,String(req.headers['user-agent']??'').slice(0,500)||null]);
     }catch(error){console.error('Audit log failed',error)}})();
   });
   next();

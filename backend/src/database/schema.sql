@@ -516,12 +516,14 @@ CREATE TABLE IF NOT EXISTS payment_receipts (
   CONSTRAINT fk_payment_work FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
 ) ENGINE=InnoDB;
 
-INSERT IGNORE INTO financial_years(code,name,start_date,end_date,is_current) VALUES
-('2026-27','2026-27','2026-04-01','2027-03-31',1);
-INSERT IGNORE INTO uoms(code,name,description) VALUES ('NOS','Numbers','Individual count');
-INSERT IGNORE INTO work_pending_sub_statuses(code,name) VALUES
-('WAIT_CUSTOMER_APPROVAL','WAIT FOR CUSTOMER APPROVAL'),
-('PARTS_UNAVAILABLE','PARTS WAITING / UNAVAILABLE');
+INSERT INTO financial_years(code,name,start_date,end_date,is_current)
+SELECT '2026-27','2026-27','2026-04-01','2027-03-31',1 WHERE NOT EXISTS(SELECT 1 FROM financial_years WHERE code='2026-27');
+INSERT INTO uoms(code,name,description)
+SELECT 'NOS','Numbers','Individual count' WHERE NOT EXISTS(SELECT 1 FROM uoms WHERE code='NOS');
+INSERT INTO work_pending_sub_statuses(code,name)
+SELECT 'WAIT_CUSTOMER_APPROVAL','WAIT FOR CUSTOMER APPROVAL' WHERE NOT EXISTS(SELECT 1 FROM work_pending_sub_statuses WHERE code='WAIT_CUSTOMER_APPROVAL');
+INSERT INTO work_pending_sub_statuses(code,name)
+SELECT 'PARTS_UNAVAILABLE','PARTS WAITING / UNAVAILABLE' WHERE NOT EXISTS(SELECT 1 FROM work_pending_sub_statuses WHERE code='PARTS_UNAVAILABLE');
 
 INSERT IGNORE INTO permissions(code,name,module,action) VALUES
 ('FY_VIEW','View Financial Years','System','view'),('FY_CREATE','Create Financial Years','System','create'),('FY_UPDATE','Update Financial Years','System','update'),('FY_DELETE','Delete Financial Years','System','delete'),
@@ -752,8 +754,9 @@ CREATE TABLE IF NOT EXISTS payroll_details (
   CONSTRAINT fk_payroll_detail_employee FOREIGN KEY(employee_id) REFERENCES employees(id)
 ) ENGINE=InnoDB;
 
-INSERT IGNORE INTO shifts(code,name,in_time,out_time,working_hours) VALUES
-('GENERAL','General Shift','09:30:00','18:30:00',8),('MORNING','Morning Shift','06:00:00','14:00:00',8),('EVENING','Evening Shift','14:00:00','22:00:00',8);
+INSERT INTO shifts(code,name,in_time,out_time,working_hours) SELECT 'GENERAL','General Shift','09:30:00','18:30:00',8 WHERE NOT EXISTS(SELECT 1 FROM shifts WHERE code='GENERAL');
+INSERT INTO shifts(code,name,in_time,out_time,working_hours) SELECT 'MORNING','Morning Shift','06:00:00','14:00:00',8 WHERE NOT EXISTS(SELECT 1 FROM shifts WHERE code='MORNING');
+INSERT INTO shifts(code,name,in_time,out_time,working_hours) SELECT 'EVENING','Evening Shift','14:00:00','22:00:00',8 WHERE NOT EXISTS(SELECT 1 FROM shifts WHERE code='EVENING');
 
 INSERT IGNORE INTO permissions(code,name,module,action) VALUES
 ('SHIFT_VIEW','View Shifts','Attendance & Payroll','view'),('SHIFT_CREATE','Create Shifts','Attendance & Payroll','create'),('SHIFT_UPDATE','Update Shifts','Attendance & Payroll','update'),('SHIFT_DELETE','Delete Shifts','Attendance & Payroll','delete'),
@@ -796,6 +799,113 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   KEY ix_audit_user (user_id),
   CONSTRAINT fk_audit_user FOREIGN KEY(user_id) REFERENCES users(id)
 ) ENGINE=InnoDB;
+
+-- Multi-company product layer. These ALTER statements intentionally live after the
+-- base schema so the same file upgrades an existing single-company installation.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS account_type ENUM('TRIAL','PAID') NOT NULL DEFAULT 'PAID' AFTER status;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS trial_started_at DATETIME NULL AFTER account_type;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS trial_ends_at DATETIME NULL AFTER trial_started_at;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS inactive_reason VARCHAR(255) NULL AFTER trial_ends_at;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS inactive_at DATETIME NULL AFTER inactive_reason;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS max_users INT UNSIGNED NULL AFTER inactive_at;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS max_branches INT UNSIGNED NULL AFTER max_users;
+
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE designations ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE financial_years ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE uoms ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE work_pending_sub_statuses ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE document_sequences ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE job_card_complaints ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE work_order_complaints ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE work_order_spares ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE work_order_attachments ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE payment_receipts ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE store_entries ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE store_entry_details ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE vendor_payments ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE vendor_payment_allocations ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER vendor_payment_id;
+ALTER TABLE daily_attendance ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE salary_advances ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE payroll_details ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE master_code_sequences ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER master_name;
+ALTER TABLE help_desk_tickets ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+
+CREATE TABLE IF NOT EXISTS user_branch_access (
+  user_id BIGINT UNSIGNED NOT NULL,
+  company_id BIGINT UNSIGNED NOT NULL,
+  branch_id BIGINT UNSIGNED NOT NULL,
+  PRIMARY KEY (user_id,branch_id),
+  CONSTRAINT fk_user_branch_access_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_user_branch_access_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+  CONSTRAINT fk_user_branch_access_branch FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS company_status_history (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_id BIGINT UNSIGNED NOT NULL,
+  old_status ENUM('active','inactive') NULL,
+  new_status ENUM('active','inactive') NOT NULL,
+  reason VARCHAR(255) NULL,
+  changed_by BIGINT UNSIGNED NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_company_status_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+  CONSTRAINT fk_company_status_user FOREIGN KEY (changed_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+INSERT IGNORE INTO roles (code,name,description,is_system,company_id) VALUES
+('SUPER_ADMIN','Super Administrator','ARA product owner access',1,NULL),
+('COMPANY_ADMIN','Company Administrator','Full access within one company',1,NULL);
+
+-- Backfill all existing single-company data into the original Ara Garage tenant.
+SET @default_company_id := (SELECT id FROM companies ORDER BY id LIMIT 1);
+DELETE x FROM financial_years x JOIN financial_years y ON y.code=x.code AND y.company_id=@default_company_id AND y.id<>x.id WHERE x.company_id IS NULL;
+DELETE x FROM uoms x JOIN uoms y ON y.code=x.code AND y.company_id=@default_company_id AND y.id<>x.id WHERE x.company_id IS NULL;
+DELETE x FROM work_pending_sub_statuses x JOIN work_pending_sub_statuses y ON y.code=x.code AND y.company_id=@default_company_id AND y.id<>x.id WHERE x.company_id IS NULL;
+DELETE x FROM shifts x JOIN shifts y ON y.code=x.code AND y.company_id=@default_company_id AND y.id<>x.id WHERE x.company_id IS NULL;
+UPDATE users u JOIN roles r ON r.id=u.role_id LEFT JOIN branches b ON b.id=u.branch_id SET u.company_id=COALESCE(b.company_id,@default_company_id) WHERE u.company_id IS NULL AND r.code<>'SUPER_ADMIN';
+UPDATE users u JOIN roles r ON r.id=u.role_id SET u.company_id=NULL,u.branch_id=NULL WHERE r.code='SUPER_ADMIN';
+UPDATE roles SET company_id=@default_company_id WHERE company_id IS NULL AND code NOT IN ('SUPER_ADMIN','COMPANY_ADMIN','ADMIN','USER');
+UPDATE designations SET company_id=@default_company_id WHERE company_id IS NULL;
+UPDATE employees e JOIN branches b ON b.id=e.branch_id SET e.company_id=b.company_id WHERE e.company_id IS NULL;
+UPDATE customers SET company_id=@default_company_id WHERE company_id IS NULL;
+UPDATE vendors SET company_id=@default_company_id WHERE company_id IS NULL;
+UPDATE financial_years SET company_id=@default_company_id WHERE company_id IS NULL;
+UPDATE vehicles SET company_id=@default_company_id WHERE company_id IS NULL;
+UPDATE uoms SET company_id=@default_company_id WHERE company_id IS NULL;
+UPDATE products SET company_id=@default_company_id WHERE company_id IS NULL;
+UPDATE work_pending_sub_statuses SET company_id=@default_company_id WHERE company_id IS NULL;
+UPDATE shifts SET company_id=@default_company_id WHERE company_id IS NULL;
+UPDATE document_sequences SET company_id=@default_company_id WHERE company_id IS NULL;
+UPDATE job_cards j JOIN branches b ON b.id=j.branch_id SET j.company_id=b.company_id WHERE j.company_id IS NULL;
+UPDATE job_card_complaints d JOIN job_cards h ON h.id=d.job_card_id SET d.company_id=h.company_id WHERE d.company_id IS NULL;
+UPDATE work_orders d JOIN job_cards h ON h.id=d.job_card_id SET d.company_id=h.company_id WHERE d.company_id IS NULL;
+UPDATE work_order_complaints d JOIN work_orders h ON h.id=d.work_order_id SET d.company_id=h.company_id WHERE d.company_id IS NULL;
+UPDATE work_order_spares d JOIN work_orders h ON h.id=d.work_order_id SET d.company_id=h.company_id WHERE d.company_id IS NULL;
+UPDATE work_order_attachments d JOIN work_orders h ON h.id=d.work_order_id SET d.company_id=h.company_id WHERE d.company_id IS NULL;
+UPDATE payment_receipts d JOIN job_cards h ON h.id=d.job_card_id SET d.company_id=h.company_id WHERE d.company_id IS NULL;
+UPDATE store_entries SET company_id=@default_company_id WHERE company_id IS NULL;
+UPDATE store_entry_details d JOIN store_entries h ON h.id=d.store_entry_id SET d.company_id=h.company_id WHERE d.company_id IS NULL;
+UPDATE vendor_payments SET company_id=@default_company_id WHERE company_id IS NULL;
+UPDATE vendor_payment_allocations d JOIN vendor_payments h ON h.id=d.vendor_payment_id SET d.company_id=h.company_id WHERE d.company_id IS NULL;
+UPDATE daily_attendance d JOIN branches b ON b.id=d.branch_id SET d.company_id=b.company_id WHERE d.company_id IS NULL;
+UPDATE salary_advances d JOIN employees e ON e.id=d.employee_id SET d.company_id=e.company_id WHERE d.company_id IS NULL;
+UPDATE payroll_runs d JOIN branches b ON b.id=d.branch_id SET d.company_id=b.company_id WHERE d.company_id IS NULL;
+UPDATE payroll_details d JOIN payroll_runs h ON h.id=d.payroll_run_id SET d.company_id=h.company_id WHERE d.company_id IS NULL;
+UPDATE master_code_sequences SET company_id=@default_company_id WHERE company_id IS NULL;
+UPDATE help_desk_tickets d JOIN users u ON u.id=d.user_id SET d.company_id=u.company_id WHERE d.company_id IS NULL;
+UPDATE audit_logs d JOIN users u ON u.id=d.user_id SET d.company_id=u.company_id WHERE d.company_id IS NULL;
 
 INSERT IGNORE INTO permissions(code,name,module,action) VALUES
 ('AUDIT_VIEW','View Audit Report','Reports','view'),

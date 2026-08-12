@@ -31,6 +31,7 @@ import { ThemeProvider } from './ThemeProvider';
 import { useAuth } from './authStore';
 import { enableNumericTextInputs } from './numericTextInputs';
 import { BrandMark } from './components/BrandLogo';
+import { CompaniesPage } from './pages/superAdmin/CompaniesPage';
 import './styles.css';
 
 enableNumericTextInputs();
@@ -38,11 +39,13 @@ const client=new QueryClient({defaultOptions:{queries:{retry:1,refetchOnWindowFo
 
 function Protected(){const token=useAuth(s=>s.token),ready=useAuth(s=>s.ready),restore=useAuth(s=>s.restore);useEffect(()=>{restore()},[restore]);if(!ready)return <div className="app-loading"><BrandMark/><span>Loading Ara Garage workspace…</span></div>;return token?<Layout/>:<Navigate to="/login" replace/>}
 function PermissionRoute({permission,children}:{permission:string;children:React.ReactNode}){const has=useAuth(s=>s.has);return has(permission)?<>{children}</>:<Navigate to="/" replace/>}
+function Home(){const user=useAuth(s=>s.user);return user?.role_code==='SUPER_ADMIN'?<Navigate to="/super-admin/companies" replace/>:<Dashboard view="operations"/>}
 
 function App(){return <Routes>
   <Route path="/login" element={<LoginPage/>}/>
   <Route element={<Protected/>}>
-    <Route index element={<Dashboard view="operations"/>}/>
+    <Route index element={<Home/>}/>
+    <Route path="super-admin/companies" element={<CompaniesPage/>}/>
     <Route path="md-dashboard" element={<PermissionRoute permission="MD_DASHBOARD_VIEW"><Dashboard view="md"/></PermissionRoute>}/>
     <Route path="user-guide" element={<UserGuidePage/>}/><Route path="help-desk" element={<HelpDeskPage/>}/><Route path="change-password" element={<ChangePasswordPage/>}/>
     <Route path="users" element={<PermissionRoute permission="USER_VIEW"><UsersPage/></PermissionRoute>}/><Route path="users/:id/permissions" element={<PermissionRoute permission="PERMISSION_ASSIGN"><UserPermissionsPage/></PermissionRoute>}/><Route path="roles" element={<PermissionRoute permission="ROLE_VIEW"><RolesPage/></PermissionRoute>}/>

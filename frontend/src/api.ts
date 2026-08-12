@@ -10,7 +10,11 @@ client.interceptors.request.use((config) => {
   if(token) config.headers.Authorization=`Bearer ${token}`;
   return config;
 });
-client.interceptors.response.use((r) => r, (error) => Promise.reject(new Error(error.response?.data?.message ?? 'Unable to complete request')));
+client.interceptors.response.use((r) => r, (error) => {
+  const message=String(error.response?.data?.message??'Unable to complete request'),hasSession=Boolean(localStorage.getItem('ara-garage.token'));
+  if(hasSession&&(error.response?.status===401||message.includes('company account is inactive')||message.includes('trial period has expired'))){localStorage.removeItem('ara-garage.token');window.location.assign(`${import.meta.env.BASE_URL}login`)}
+  return Promise.reject(new Error(message));
+});
 
 export const masterApi = {
   list: async (slug: MasterSlug, params: { page: number; pageSize: number; search: string }) => (await client.get<ListResponse>(`/masters/${slug}`, { params })).data,
@@ -22,7 +26,7 @@ export const masterApi = {
 
 export type Permission={id:number;code:string;name:string;module:string;action:string};
 export type Role=RecordData & {code:string;name:string;description?:string;is_system:number;permission_count:number;permission_ids:number[]};
-export type User=RecordData & {username:string;email:string;full_name:string;role_id:number;role_name:string;branch_id?:number;branch_name?:string;permissions?:string[]};
+export type User=RecordData & {username:string;email:string;full_name:string;role_id:number;role_name:string;role_code:string;company_id?:number;company_name?:string;account_type?:'TRIAL'|'PAID';trial_ends_at?:string;branch_id?:number;branch_name?:string;permissions?:string[]};
 export type NavItem={id:number;parent_id?:number;title:string;route?:string;icon:string;permission_code?:string;children:NavItem[]};
 export const accessApi={
   login:async(login:string,password:string)=>(await client.post('/auth/login',{login,password})).data.data as {token:string;user:User},
@@ -44,6 +48,16 @@ export const accessApi={
   helpDesk:async()=>(await client.get('/help-desk')).data.data as RecordData[],
   createTicket:async(data:Record<string,unknown>)=>(await client.post('/help-desk',data)).data,
   dashboard:async(financial_year_id:number|undefined,view:'operations'|'md')=>(await client.get('/dashboard',{params:{financial_year_id,view}})).data.data as Record<string,any>,
+};
+
+export type Company=RecordData&{code:string;name:string;legal_name?:string;account_type:'TRIAL'|'PAID';trial_started_at?:string;trial_ends_at?:string;inactive_reason?:string;inactive_at?:string;phone?:string;email?:string;city?:string;state?:string;max_users?:number;max_branches?:number;user_count?:number;branch_count?:number;admin_name?:string;trial_days_remaining?:number};
+export const superAdminApi={
+  companies:async(params:{page:number;search:string;status?:string})=>(await client.get('/super-admin/companies',{params})).data as {data:Company[];meta:{page:number;pageSize:number;total:number}},
+  company:async(id:number)=>(await client.get(`/super-admin/companies/${id}`)).data.data as Company&{admins:RecordData[];history:RecordData[]},
+  createCompany:async(data:Record<string,unknown>)=>(await client.post('/super-admin/companies',data)).data,
+  updateStatus:async(id:number,status:'active'|'inactive',reason:string)=>(await client.post(`/super-admin/companies/${id}/status`,{status,reason})).data,
+  extendTrial:async(id:number,days:number)=>(await client.post(`/super-admin/companies/${id}/extend-trial`,{days})).data,
+  convertPaid:async(id:number)=>(await client.post(`/super-admin/companies/${id}/convert-paid`)).data,
 };
 
 export const transactionApi={

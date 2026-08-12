@@ -24,13 +24,38 @@ async function migrate() {
   }
   await connection.query(`USE ${mysql.escapeId(env.db.database)}`);
   await connection.query(sql);
+  const tenantTables=['designations','employees','customers','vendors','financial_years','vehicles','uoms','products','work_pending_sub_statuses','document_sequences','job_cards','job_card_complaints','work_orders','work_order_complaints','work_order_spares','work_order_attachments','payment_receipts','store_entries','store_entry_details','vendor_payments','vendor_payment_allocations','shifts','daily_attendance','salary_advances','payroll_runs','payroll_details','master_code_sequences','help_desk_tickets'];
+  for(const table of tenantTables){
+    const[columns]=await connection.query<mysql.RowDataPacket[]>('SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND COLUMN_NAME="company_id"',[env.db.database,table]);
+    if(columns[0]?.IS_NULLABLE==='YES')await connection.query(`ALTER TABLE ${mysql.escapeId(table)} MODIFY company_id BIGINT UNSIGNED NOT NULL`);
+    const [indexRows]=await connection.query<mysql.RowDataPacket[]>('SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND INDEX_NAME=?',[env.db.database,table,`idx_${table}_company`]);
+    if(!indexRows[0])await connection.query(`ALTER TABLE ${mysql.escapeId(table)} ADD INDEX ${mysql.escapeId(`idx_${table}_company`)} (company_id)`);
+  }
+  const companyUnique:[string,string,string][]=[
+    ['branches','code','uq_branches_company_code'],['departments','code','uq_departments_company_code'],['designations','code','uq_designations_company_code'],['employees','code','uq_employees_company_code'],['customers','code','uq_customers_company_code'],['vendors','code','uq_vendors_company_code'],['financial_years','code','uq_financial_years_company_code'],['vehicles','vehicle_number','uq_vehicles_company_number'],['uoms','code','uq_uoms_company_code'],['products','code','uq_products_company_code'],['work_pending_sub_statuses','code','uq_pending_status_company_code'],['shifts','code','uq_shifts_company_code'],
+  ];
+  for(const[table,legacyIndex,newIndex]of companyUnique){
+    const[legacy]=await connection.query<mysql.RowDataPacket[]>('SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND INDEX_NAME=?',[env.db.database,table,legacyIndex]);
+    if(legacy[0])await connection.query(`ALTER TABLE ${mysql.escapeId(table)} DROP INDEX ${mysql.escapeId(legacyIndex)}`);
+    const[composite]=await connection.query<mysql.RowDataPacket[]>('SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND INDEX_NAME=?',[env.db.database,table,newIndex]);
+    if(!composite[0])await connection.query(`ALTER TABLE ${mysql.escapeId(table)} ADD UNIQUE INDEX ${mysql.escapeId(newIndex)} (company_id,${mysql.escapeId(legacyIndex)})`);
+  }
+  const[sequencePk]=await connection.query<mysql.RowDataPacket[]>(`SELECT COUNT(*) column_count FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA=? AND TABLE_NAME='master_code_sequences' AND CONSTRAINT_NAME='PRIMARY'`,[env.db.database]);
+  if(Number(sequencePk[0]?.column_count)===1)await connection.query('ALTER TABLE master_code_sequences MODIFY company_id BIGINT UNSIGNED NOT NULL,DROP PRIMARY KEY,ADD PRIMARY KEY(master_name,company_id)');
   const passwordHash = await bcrypt.hash('Admin@123', env.bcryptRounds);
   await connection.execute(
-    `INSERT INTO users (username,email,full_name,password_hash,role_id,branch_id,status)
-     SELECT 'admin','admin@aragarage.local','System Administrator',?,r.id,b.id,'active'
+    `INSERT INTO users (username,email,full_name,password_hash,role_id,branch_id,company_id,status)
+     SELECT 'admin','admin@aragarage.local','Company Administrator',?,r.id,b.id,b.company_id,'active'
      FROM roles r LEFT JOIN branches b ON b.is_head_office=1
      WHERE r.code='ADMIN' AND NOT EXISTS (SELECT 1 FROM users WHERE username='admin') LIMIT 1`,
     [passwordHash],
+  );
+  const superPasswordHash = await bcrypt.hash('SuperAdmin@123', env.bcryptRounds);
+  await connection.execute(
+    `INSERT INTO users (username,email,full_name,password_hash,role_id,branch_id,company_id,status,must_change_password)
+     SELECT 'superadmin','superadmin@aragarage.local','Super Administrator',?,r.id,NULL,NULL,'active',1
+     FROM roles r WHERE r.code='SUPER_ADMIN' AND NOT EXISTS (SELECT 1 FROM users WHERE username='superadmin') LIMIT 1`,
+    [superPasswordHash],
   );
   await connection.end();
   console.log(`Database ${env.db.database} is ready.`);

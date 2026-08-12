@@ -1,7 +1,7 @@
 declare global {
   namespace Express {
     interface Request {
-      user?: { id: number; username: string; role: string; permissions: string[] };
+      user?: { id: number; username: string; role: string; permissions: string[]; company_id: number | null; is_super_admin: boolean };
     }
   }
 }
