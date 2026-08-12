@@ -34,6 +34,7 @@ import { BrandMark } from './components/BrandLogo';
 import { CompaniesPage } from './pages/superAdmin/CompaniesPage';
 import { PaymentEntryPage } from './pages/superAdmin/PaymentEntryPage';
 import { PaymentReportPage } from './pages/superAdmin/PaymentReportPage';
+import { PlatformProfilePage } from './pages/superAdmin/PlatformProfilePage';
 import './styles.css';
 
 enableNumericTextInputs();
@@ -48,6 +49,7 @@ function App(){return <Routes>
   <Route element={<Protected/>}>
     <Route index element={<Home/>}/>
     <Route path="super-admin/companies" element={<CompaniesPage/>}/>
+    <Route path="super-admin/platform-profile" element={<PlatformProfilePage/>}/>
     <Route path="super-admin/payments" element={<PaymentEntryPage/>}/>
     <Route path="super-admin/payment-report" element={<PaymentReportPage/>}/>
     <Route path="md-dashboard" element={<PermissionRoute permission="MD_DASHBOARD_VIEW"><Dashboard view="md"/></PermissionRoute>}/>

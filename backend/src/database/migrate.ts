@@ -24,6 +24,30 @@ async function migrate() {
   }
   await connection.query(`USE ${mysql.escapeId(env.db.database)}`);
   await connection.query(sql);
+  // Seed the first effective rate for installations that already used the
+  // single monthly_fee field, then repair unpaid dues created with an earlier
+  // mistaken amount. Paid value is never reduced or invalidated.
+  await connection.query(`INSERT IGNORE INTO company_billing_rates(company_id,effective_from_month,monthly_fee,due_day,remarks)
+    SELECT id,billing_start_month,monthly_fee,billing_due_day,'Migrated opening billing rate' FROM companies
+    WHERE billing_cycle='MONTHLY' AND monthly_fee>0 AND billing_start_month IS NOT NULL`);
+  // Older installations may contain a due row one month before the stored
+  // start month (legacy Date timezone conversion). Treat that earliest
+  // existing due as the opening month instead of leaving it on an orphan fee.
+  await connection.query(`UPDATE company_billing_rates r
+    JOIN (SELECT company_id,MIN(billing_month) first_due FROM company_monthly_dues GROUP BY company_id) d ON d.company_id=r.company_id
+    SET r.effective_from_month=d.first_due
+    WHERE r.remarks='Migrated opening billing rate' AND d.first_due<r.effective_from_month`);
+  await connection.query(`UPDATE companies c
+    JOIN (SELECT company_id,MIN(billing_month) first_due FROM company_monthly_dues GROUP BY company_id) d ON d.company_id=c.id
+    SET c.billing_start_month=d.first_due
+    WHERE c.billing_start_month IS NOT NULL AND d.first_due<c.billing_start_month`);
+  await connection.query(`UPDATE company_monthly_dues d
+    JOIN company_billing_rates r ON r.company_id=d.company_id AND r.effective_from_month=(
+      SELECT MAX(r2.effective_from_month) FROM company_billing_rates r2 WHERE r2.company_id=d.company_id AND r2.effective_from_month<=d.billing_month
+    )
+    SET d.due_amount=r.monthly_fee,d.due_date=STR_TO_DATE(CONCAT(DATE_FORMAT(d.billing_month,'%Y-%m-'),LPAD(LEAST(r.due_day,DAY(LAST_DAY(d.billing_month))),2,'0')),'%Y-%m-%d'),
+        d.status=CASE WHEN d.paid_amount<=0 THEN 'PENDING' WHEN d.paid_amount>=r.monthly_fee THEN 'PAID' ELSE 'PARTIAL' END
+    WHERE d.paid_amount<=r.monthly_fee`);
   const tenantTables=['designations','employees','customers','vendors','financial_years','vehicles','uoms','products','work_pending_sub_statuses','document_sequences','job_cards','job_card_complaints','work_orders','work_order_complaints','work_order_spares','work_order_attachments','payment_receipts','store_entries','store_entry_details','vendor_payments','vendor_payment_allocations','shifts','daily_attendance','salary_advances','payroll_runs','payroll_details','master_code_sequences','help_desk_tickets'];
   for(const table of tenantTables){
     const[columns]=await connection.query<mysql.RowDataPacket[]>('SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND COLUMN_NAME="company_id"',[env.db.database,table]);

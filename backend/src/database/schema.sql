@@ -874,6 +874,48 @@ CREATE TABLE IF NOT EXISTS platform_sequences (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS platform_profile (
+  id TINYINT UNSIGNED PRIMARY KEY,
+  organization_name VARCHAR(180) NOT NULL,
+  legal_name VARCHAR(180) NULL,
+  gstin VARCHAR(15) NULL,
+  pan VARCHAR(10) NULL,
+  phone VARCHAR(20) NULL,
+  email VARCHAR(150) NULL,
+  website VARCHAR(180) NULL,
+  address_line1 VARCHAR(180) NULL,
+  address_line2 VARCHAR(180) NULL,
+  city VARCHAR(80) NULL,
+  state VARCHAR(80) NULL,
+  pincode VARCHAR(10) NULL,
+  receipt_prefix VARCHAR(30) NOT NULL DEFAULT 'PAYMENT RECEIPT',
+  receipt_footer VARCHAR(500) NULL,
+  logo_path VARCHAR(500) NULL,
+  logo_mime_type VARCHAR(120) NULL,
+  updated_by BIGINT UNSIGNED NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_platform_profile_user FOREIGN KEY(updated_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+INSERT IGNORE INTO platform_profile(id,organization_name,legal_name,receipt_footer)
+VALUES(1,'Ara Garage','ARA Softwares','Thank you for your payment. This is a system-generated receipt.');
+
+CREATE TABLE IF NOT EXISTS company_billing_rates (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_id BIGINT UNSIGNED NOT NULL,
+  effective_from_month DATE NOT NULL,
+  monthly_fee DECIMAL(14,2) NOT NULL,
+  due_day TINYINT UNSIGNED NOT NULL DEFAULT 10,
+  remarks VARCHAR(255) NULL,
+  created_by BIGINT UNSIGNED NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_company_billing_rate_month (company_id,effective_from_month),
+  KEY idx_company_billing_rates_company (company_id,effective_from_month),
+  CONSTRAINT fk_company_billing_rates_company FOREIGN KEY(company_id) REFERENCES companies(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_company_billing_rates_user FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS company_monthly_dues (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   company_id BIGINT UNSIGNED NOT NULL,

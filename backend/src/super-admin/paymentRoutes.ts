@@ -20,6 +20,14 @@ const upload=multer({
   limits:{fileSize:env.maxUploadSizeMb*1024*1024,files:10},
   fileFilter:(_req,file,callback)=>allowedExtensions.has(path.extname(file.originalname).toLowerCase())?callback(null,true):callback(new Error('Only PDF, JPG, PNG, XLS and XLSX files are allowed')),
 }).array('files',10);
+const profileRoot=path.resolve(env.uploadDir,'platform-profile');
+fs.mkdirSync(profileRoot,{recursive:true});
+const logoUpload=multer({storage:multer.diskStorage({destination:(_req,_file,callback)=>callback(null,profileRoot),filename:(_req,file,callback)=>callback(null,`logo-${Date.now()}${path.extname(file.originalname).toLowerCase()}`)}),limits:{fileSize:env.maxUploadSizeMb*1024*1024,files:1},fileFilter:(_req,file,callback)=>['image/jpeg','image/png','image/webp'].includes(file.mimetype)?callback(null,true):callback(new Error('Logo must be JPG, PNG or WEBP'))}).single('logo');
+
+const profileSchema=z.object({organization_name:z.string().trim().min(2).max(180),legal_name:z.string().trim().max(180).nullish(),gstin:z.string().trim().max(15).nullish(),pan:z.string().trim().max(10).nullish(),phone:z.string().trim().max(20).nullish(),email:z.union([z.string().trim().email(),z.literal(''),z.null()]).nullish(),website:z.union([z.string().trim().url(),z.literal(''),z.null()]).nullish(),address_line1:z.string().trim().max(180).nullish(),address_line2:z.string().trim().max(180).nullish(),city:z.string().trim().max(80).nullish(),state:z.string().trim().max(80).nullish(),pincode:z.string().trim().max(10).nullish(),receipt_prefix:z.string().trim().min(2).max(30),receipt_footer:z.string().trim().max(500).nullish()});
+async function profileData(){const rows=await query<RowDataPacket&Record<string,unknown>>('SELECT * FROM platform_profile WHERE id=1'),profile=rows[0];if(!profile)return null;let logo_data_url:string|null=null;if(profile.logo_path&&profile.logo_mime_type){try{const data=fs.readFileSync(String(profile.logo_path));logo_data_url=`data:${profile.logo_mime_type};base64,${data.toString('base64')}`}catch{}}return{...profile,logo_data_url}}
+router.get('/super-admin/platform-profile',asyncRoute(async(_req,res)=>{res.json({data:await profileData()})}));
+router.put('/super-admin/platform-profile',logoUpload,asyncRoute(async(req,res)=>{const file=req.file;let raw:unknown={};try{raw=JSON.parse(String(req.body.data??'{}'))}catch{if(file)try{fs.unlinkSync(file.path)}catch{}res.status(422).json({message:'Invalid profile data'});return}const parsed=profileSchema.safeParse(raw);if(!parsed.success){if(file)try{fs.unlinkSync(file.path)}catch{}res.status(422).json({message:parsed.error.issues[0]?.message});return}const d=parsed.data,existing=await query<RowDataPacket&{logo_path:string|null}>('SELECT logo_path FROM platform_profile WHERE id=1');await execute(`UPDATE platform_profile SET organization_name=?,legal_name=?,gstin=?,pan=?,phone=?,email=?,website=?,address_line1=?,address_line2=?,city=?,state=?,pincode=?,receipt_prefix=?,receipt_footer=?,logo_path=COALESCE(?,logo_path),logo_mime_type=COALESCE(?,logo_mime_type),updated_by=? WHERE id=1`,[d.organization_name,d.legal_name||null,d.gstin||null,d.pan||null,d.phone||null,d.email||null,d.website||null,d.address_line1||null,d.address_line2||null,d.city||null,d.state||null,d.pincode||null,d.receipt_prefix,d.receipt_footer||null,file?.path??null,file?.mimetype??null,req.user!.id]);if(file&&existing[0]?.logo_path&&path.resolve(existing[0].logo_path)!==path.resolve(file.path)){try{fs.unlinkSync(existing[0].logo_path)}catch{}}res.json({data:await profileData(),message:'Platform profile updated'})}));
 
 type CompanyBillingRow=RowDataPacket&{id:number;account_type:'TRIAL'|'PAID';billing_cycle:'MONTHLY'|'ONE_TIME';monthly_fee:number;billing_start_month:string|null;billing_due_day:number};
 const monthDate=(date:Date)=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-01`;
@@ -33,9 +41,11 @@ async function syncCompanyDues(companyId:number){
   const months=(end.getFullYear()-start.getFullYear())*12+end.getMonth()-start.getMonth();
   if(months<0)return;
   if(months>240)throw new Error('Billing start month cannot be more than 20 years in the past');
+  const rates=await query<RowDataPacket&{effective_from_month:string;monthly_fee:number;due_day:number}>('SELECT effective_from_month,monthly_fee,due_day FROM company_billing_rates WHERE company_id=? ORDER BY effective_from_month',[companyId]);
   for(let index=0;index<=months;index++){
     const current=new Date(start.getFullYear(),start.getMonth()+index,1);
-    await execute('INSERT IGNORE INTO company_monthly_dues(company_id,billing_month,due_date,due_amount)VALUES(?,?,?,?)',[companyId,monthDate(current),dueDate(current.getFullYear(),current.getMonth(),Number(company.billing_due_day)||10),Number(company.monthly_fee)]);
+    const key=monthDate(current),rate=[...rates].reverse().find(row=>String(row.effective_from_month).slice(0,10)<=key),fee=Number(rate?.monthly_fee??company.monthly_fee),day=Number(rate?.due_day??company.billing_due_day)||10;
+    await execute('INSERT IGNORE INTO company_monthly_dues(company_id,billing_month,due_date,due_amount)VALUES(?,?,?,?)',[companyId,key,dueDate(current.getFullYear(),current.getMonth(),day),fee]);
   }
 }
 
@@ -45,7 +55,7 @@ async function syncAllDues(){
 }
 
 const billingSchema=z.object({
-  billing_cycle:z.enum(['MONTHLY','ONE_TIME']),monthly_fee:z.coerce.number().min(0),billing_start_month:z.union([z.string().regex(/^\d{4}-\d{2}(-\d{2})?$/),z.literal(''),z.null()]).nullish(),billing_due_day:z.coerce.number().int().min(1).max(28),
+  billing_cycle:z.enum(['MONTHLY','ONE_TIME']),monthly_fee:z.coerce.number().min(0),billing_start_month:z.union([z.string().regex(/^\d{4}-\d{2}(-\d{2})?$/),z.literal(''),z.null()]).nullish(),effective_from_month:z.union([z.string().regex(/^\d{4}-\d{2}(-\d{2})?$/),z.literal(''),z.null()]).nullish(),billing_due_day:z.coerce.number().int().min(1).max(28),remarks:z.string().trim().max(255).nullish(),
 }).superRefine((value,context)=>{if(value.billing_cycle==='MONTHLY'&&value.monthly_fee>0&&!value.billing_start_month)context.addIssue({code:z.ZodIssueCode.custom,path:['billing_start_month'],message:'Billing start month is required for monthly billing'})});
 
 router.get('/super-admin/billing/companies',asyncRoute(async(_req,res)=>{
@@ -62,11 +72,18 @@ router.get('/super-admin/billing/companies',asyncRoute(async(_req,res)=>{
 
 router.put('/super-admin/billing/companies/:id',asyncRoute(async(req,res)=>{
   const parsed=billingSchema.safeParse(req.body);if(!parsed.success){res.status(422).json({message:parsed.error.issues[0]?.message});return}
-  const data=parsed.data,start=data.billing_start_month?`${String(data.billing_start_month).slice(0,7)}-01`:null;
-  const result=await execute('UPDATE companies SET billing_cycle=?,monthly_fee=?,billing_start_month=?,billing_due_day=? WHERE id=?',[data.billing_cycle,data.monthly_fee,start,data.billing_due_day,req.params.id]);
-  if(!result.affectedRows){res.status(404).json({message:'Company not found'});return}
+  const data=parsed.data,start=data.billing_start_month?`${String(data.billing_start_month).slice(0,7)}-01`:null,effective=data.effective_from_month?`${String(data.effective_from_month).slice(0,7)}-01`:start;
+  const current=await query<RowDataPacket&{id:number;billing_start_month:string|null}>('SELECT id,billing_start_month FROM companies WHERE id=?',[req.params.id]);if(!current[0]){res.status(404).json({message:'Company not found'});return}
+  await withTransaction(async connection=>{
+    const originalStart=current[0].billing_start_month?String(current[0].billing_start_month).slice(0,10):null,nextStart=originalStart&&start?(originalStart<start?originalStart:start):(originalStart||start);
+    await connection.execute('UPDATE companies SET billing_cycle=?,monthly_fee=?,billing_start_month=?,billing_due_day=? WHERE id=?',[data.billing_cycle,data.monthly_fee,nextStart,data.billing_due_day,req.params.id]);
+    if(data.billing_cycle==='MONTHLY'&&data.monthly_fee>0&&effective){
+      await connection.execute(`INSERT INTO company_billing_rates(company_id,effective_from_month,monthly_fee,due_day,remarks,created_by)VALUES(?,?,?,?,?,?) ON DUPLICATE KEY UPDATE monthly_fee=VALUES(monthly_fee),due_day=VALUES(due_day),remarks=VALUES(remarks),created_by=VALUES(created_by)`,[req.params.id,effective,data.monthly_fee,data.billing_due_day,data.remarks||'Billing rate updated',req.user!.id]);
+      await connection.execute(`UPDATE company_monthly_dues SET due_amount=?,due_date=STR_TO_DATE(CONCAT(DATE_FORMAT(billing_month,'%Y-%m-'),LPAD(LEAST(?,DAY(LAST_DAY(billing_month))),2,'0')),'%Y-%m-%d'),status=CASE WHEN paid_amount<=0 THEN 'PENDING' WHEN paid_amount>=? THEN 'PAID' ELSE 'PARTIAL' END WHERE company_id=? AND billing_month>=? AND paid_amount<=?`,[data.monthly_fee,data.billing_due_day,data.monthly_fee,req.params.id,effective,data.monthly_fee]);
+    }
+  });
   await syncCompanyDues(Number(req.params.id));
-  res.json({message:'Company billing settings updated'});
+  res.json({message:effective?`Billing rate will apply from ${String(effective).slice(0,7)}`:'Company billing settings updated'});
 }));
 
 router.get('/super-admin/billing/companies/:id/dues',asyncRoute(async(req,res)=>{
@@ -74,7 +91,18 @@ router.get('/super-admin/billing/companies/:id/dues',asyncRoute(async(req,res)=>
   const company=await query<RowDataPacket&Record<string,unknown>>('SELECT id,code,name,account_type,billing_cycle,monthly_fee,billing_start_month,billing_due_day FROM companies WHERE id=?',[req.params.id]);
   if(!company[0]){res.status(404).json({message:'Company not found'});return}
   const dues=await query<RowDataPacket&Record<string,unknown>>('SELECT *,GREATEST(due_amount-paid_amount,0) balance FROM company_monthly_dues WHERE company_id=? ORDER BY billing_month',[req.params.id]);
-  res.json({data:{company:company[0],dues}});
+  const rates=await query<RowDataPacket&Record<string,unknown>>('SELECT r.*,u.full_name created_by_name FROM company_billing_rates r LEFT JOIN users u ON u.id=r.created_by WHERE r.company_id=? ORDER BY r.effective_from_month DESC',[req.params.id]);
+  res.json({data:{company:company[0],dues,rates}});
+}));
+
+const dueUpdateSchema=z.object({due_amount:z.coerce.number().min(0),due_date:z.string().date()});
+router.put('/super-admin/billing/companies/:companyId/dues/:id',asyncRoute(async(req,res)=>{
+  const parsed=dueUpdateSchema.safeParse(req.body);if(!parsed.success){res.status(422).json({message:parsed.error.issues[0]?.message});return}
+  const rows=await query<RowDataPacket&{paid_amount:number;billing_month:string}>('SELECT paid_amount,billing_month FROM company_monthly_dues WHERE id=? AND company_id=?',[req.params.id,req.params.companyId]);if(!rows[0]){res.status(404).json({message:'Billing month not found'});return}
+  if(parsed.data.due_amount<Number(rows[0].paid_amount)){res.status(422).json({message:'Due amount cannot be lower than the amount already paid for this month'});return}
+  const status=parsed.data.due_amount<=Number(rows[0].paid_amount)?'PAID':Number(rows[0].paid_amount)>0?'PARTIAL':'PENDING';
+  await execute('UPDATE company_monthly_dues SET due_amount=?,due_date=?,status=? WHERE id=? AND company_id=?',[parsed.data.due_amount,parsed.data.due_date,status,req.params.id,req.params.companyId]);
+  res.json({message:`${String(rows[0].billing_month).slice(0,7)} billing month corrected`});
 }));
 
 const paymentSchema=z.object({company_id:z.coerce.number().int().positive(),payment_date:z.string().date(),amount:z.coerce.number().positive(),payment_mode:z.enum(['CASH','UPI','BANK_TRANSFER','CHEQUE','CARD','OTHER']),reference_number:z.string().trim().max(100).nullish(),remarks:z.string().trim().min(2).max(500),due_ids:z.array(z.coerce.number().int().positive()).default([])});

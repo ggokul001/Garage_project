@@ -1,0 +1,18 @@
+import {FormEvent,useEffect,useState} from 'react';
+import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
+import {Building2,ImagePlus,Landmark,Save} from 'lucide-react';
+import toast from 'react-hot-toast';
+import {superAdminPaymentApi} from '../../api';
+import {PageTitle} from '../UsersPage';
+
+const fields=[['organization_name','Organization name *'],['legal_name','Legal name'],['gstin','GSTIN'],['pan','PAN'],['phone','Phone'],['email','Email'],['website','Website'],['address_line1','Address line 1'],['address_line2','Address line 2'],['city','City'],['state','State'],['pincode','Pincode'],['receipt_prefix','Receipt heading *']] as const;
+
+export function PlatformProfilePage(){
+  const qc=useQueryClient(),profile=useQuery({queryKey:['platform-profile'],queryFn:superAdminPaymentApi.platformProfile});
+  const[form,setForm]=useState<Record<string,unknown>>({}),[logo,setLogo]=useState<File|null>(null),[preview,setPreview]=useState('');
+  useEffect(()=>{if(profile.data){setForm(profile.data);setPreview(String(profile.data.logo_data_url??''))}},[profile.data]);
+  useEffect(()=>{if(!logo)return;const url=URL.createObjectURL(logo);setPreview(url);return()=>URL.revokeObjectURL(url)},[logo]);
+  const save=useMutation({mutationFn:()=>superAdminPaymentApi.savePlatformProfile(form,logo),onSuccess:(response:any)=>{toast.success(response.message);setLogo(null);qc.setQueryData(['platform-profile'],response.data)},onError:(error:Error)=>toast.error(error.message)});
+  const submit=(event:FormEvent)=>{event.preventDefault();save.mutate()};
+  return <div><PageTitle title="Platform Profile" subtitle="Ara Garage receipt logo, address and organization details" icon={Landmark}/><form onSubmit={submit} className="grid gap-4 xl:grid-cols-[320px_1fr]"><section className="panel p-5"><h3 className="text-sm font-semibold">Receipt Branding</h3><p className="mt-1 text-xs leading-5 text-fg-muted">This logo and organization identity appear on payment receipts and report printouts.</p><div className="mt-5 grid min-h-44 place-items-center overflow-hidden rounded-xl border border-dashed border-border bg-white p-4">{preview?<img src={preview} alt="Organization logo" className="max-h-36 max-w-full object-contain"/>:<div className="text-center text-fg-subtle"><Building2 className="mx-auto" size={34}/><p className="mt-2 text-xs">Default Ara Garage name will be used</p></div>}</div><label className="btn-secondary mt-4 w-full cursor-pointer"><ImagePlus size={15}/>Choose logo<input type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden" onChange={event=>setLogo(event.target.files?.[0]??null)}/></label><p className="mt-2 text-[10px] text-fg-subtle">JPG, PNG or WEBP. Maximum configured upload size.</p></section><section className="panel p-5"><div className="grid gap-4 sm:grid-cols-2">{fields.map(([name,label])=><div key={name} className={name.startsWith('address_')?'sm:col-span-2':''}><label className="label">{label}</label><input className="input" type={name==='email'?'email':name==='website'?'url':'text'} value={String(form[name]??'')} onChange={event=>setForm({...form,[name]:event.target.value})} required={label.includes('*')}/></div>)}<div className="sm:col-span-2"><label className="label">Receipt footer</label><textarea className="input h-24 py-2" value={String(form.receipt_footer??'')} onChange={event=>setForm({...form,receipt_footer:event.target.value})}/></div></div><div className="mt-5 flex justify-end"><button className="btn-primary" disabled={save.isPending}><Save size={15}/>{save.isPending?'Saving...':'Save platform profile'}</button></div></section></form></div>
+}

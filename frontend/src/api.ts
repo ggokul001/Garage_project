@@ -63,9 +63,12 @@ export const superAdminApi={
 };
 
 export const superAdminPaymentApi={
+  platformProfile:async()=>(await client.get('/super-admin/platform-profile')).data.data as RecordData,
+  savePlatformProfile:async(data:Record<string,unknown>,logo?:File|null)=>{const form=new FormData();form.append('data',JSON.stringify(data));if(logo)form.append('logo',logo);return(await client.put('/super-admin/platform-profile',form)).data},
   billingCompanies:async()=>(await client.get('/super-admin/billing/companies')).data.data as RecordData[],
   saveBilling:async(id:number,data:Record<string,unknown>)=>(await client.put(`/super-admin/billing/companies/${id}`,data)).data,
-  companyDues:async(id:number)=>(await client.get(`/super-admin/billing/companies/${id}/dues`)).data.data as {company:RecordData;dues:RecordData[]},
+  companyDues:async(id:number)=>(await client.get(`/super-admin/billing/companies/${id}/dues`)).data.data as {company:RecordData;dues:RecordData[];rates:RecordData[]},
+  updateDue:async(companyId:number,id:number,data:Record<string,unknown>)=>(await client.put(`/super-admin/billing/companies/${companyId}/dues/${id}`,data)).data,
   payments:async(params:Record<string,unknown>)=>(await client.get('/super-admin/payments',{params})).data as {data:RecordData[];meta:{page:number;pageSize:number;total:number}},
   payment:async(id:number)=>(await client.get(`/super-admin/payments/${id}`)).data.data as RecordData&{allocations:RecordData[];attachments:RecordData[]},
   createPayment:async(data:Record<string,unknown>,files:File[])=>{const form=new FormData();form.append('data',JSON.stringify(data));files.forEach(file=>form.append('files',file));return(await client.post('/super-admin/payments',form)).data},
