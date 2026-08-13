@@ -848,6 +848,29 @@ ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NUL
 ALTER TABLE payroll_details ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
 ALTER TABLE master_code_sequences ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER master_name;
 ALTER TABLE help_desk_tickets ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE help_desk_tickets ADD COLUMN IF NOT EXISTS from_email VARCHAR(150) NULL AFTER user_id;
+ALTER TABLE help_desk_tickets ADD COLUMN IF NOT EXISTS recipient_email VARCHAR(150) NULL AFTER from_email;
+ALTER TABLE help_desk_tickets ADD COLUMN IF NOT EXISTS mail_status ENUM('pending','sent','failed') NOT NULL DEFAULT 'pending' AFTER resolution;
+ALTER TABLE help_desk_tickets ADD COLUMN IF NOT EXISTS mail_message_id VARCHAR(255) NULL AFTER mail_status;
+ALTER TABLE help_desk_tickets ADD COLUMN IF NOT EXISTS mail_error VARCHAR(500) NULL AFTER mail_message_id;
+
+CREATE TABLE IF NOT EXISTS help_desk_attachments (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_id BIGINT UNSIGNED NOT NULL,
+  ticket_id BIGINT UNSIGNED NOT NULL,
+  original_name VARCHAR(255) NOT NULL,
+  stored_name VARCHAR(255) NOT NULL,
+  file_path VARCHAR(500) NOT NULL,
+  mime_type VARCHAR(120) NOT NULL,
+  file_size BIGINT UNSIGNED NOT NULL,
+  uploaded_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_helpdesk_attachment_ticket(ticket_id),
+  KEY idx_helpdesk_attachment_company(company_id),
+  CONSTRAINT fk_helpdesk_attachment_company FOREIGN KEY(company_id) REFERENCES companies(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_helpdesk_attachment_ticket FOREIGN KEY(ticket_id) REFERENCES help_desk_tickets(id) ON DELETE CASCADE,
+  CONSTRAINT fk_helpdesk_attachment_user FOREIGN KEY(uploaded_by) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB;
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
 
 CREATE TABLE IF NOT EXISTS user_branch_access (
@@ -886,6 +909,7 @@ CREATE TABLE IF NOT EXISTS platform_profile (
   pan VARCHAR(10) NULL,
   phone VARCHAR(20) NULL,
   email VARCHAR(150) NULL,
+  support_email VARCHAR(150) NULL,
   website VARCHAR(180) NULL,
   address_line1 VARCHAR(180) NULL,
   address_line2 VARCHAR(180) NULL,
@@ -900,6 +924,8 @@ CREATE TABLE IF NOT EXISTS platform_profile (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_platform_profile_user FOREIGN KEY(updated_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
+
+ALTER TABLE platform_profile ADD COLUMN IF NOT EXISTS support_email VARCHAR(150) NULL AFTER email;
 
 CREATE TABLE IF NOT EXISTS platform_products (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -924,6 +950,7 @@ CREATE TABLE IF NOT EXISTS platform_products (
 
 INSERT IGNORE INTO platform_profile(id,organization_name,legal_name,receipt_footer)
 VALUES(1,'Ara Garage','ARA Softwares','Thank you for your payment. This is a system-generated receipt.');
+UPDATE platform_profile SET support_email=COALESCE(NULLIF(support_email,''),NULLIF(email,'')) WHERE id=1;
 
 CREATE TABLE IF NOT EXISTS company_billing_rates (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

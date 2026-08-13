@@ -494,12 +494,13 @@ const guides = [
   {
     title: 'Help Desk & Security',
     icon: LifeBuoy,
-    summary: 'Get support while keeping application access safe and traceable.',
+    summary: 'Email the support team directly with the problem details and supporting documents.',
     steps: [
-      'Use Help Desk to submit the issue with a clear subject and description.',
+      'Open Help Desk; the company master email is filled automatically as the reply email and can be changed manually.',
+      'Enter a clear problem description, including the page or module and the steps that caused the issue.',
+      'Attach multiple screenshots or PDF, Word, Excel and text documents when required.',
+      'Click Submit Request. The fixed support address receives the email and replies return to the entered From email.',
       'Never share passwords; reset credentials when compromise is suspected.',
-      'Deactivate users who no longer require application access.',
-      'Preserve finalized documents and use status changes instead of removing historical business records.',
     ],
   },
 ];

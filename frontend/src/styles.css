@@ -135,6 +135,12 @@
 table th.amount-column,table td.amount-column{text-align:right!important;font-variant-numeric:tabular-nums}
 input.amount-input{text-align:right!important;font-variant-numeric:tabular-nums}
 
+.helpdesk-dropzone{display:grid;width:100%;min-height:12rem;place-items:center;gap:.55rem;border:1.5px dashed hsl(var(--primary)/.55);border-radius:.9rem;background:hsl(var(--primary)/.035);padding:1.5rem;color:hsl(var(--fg-muted));text-align:center;transition:border-color .18s ease,background .18s ease,transform .18s ease}
+.helpdesk-dropzone:hover,.helpdesk-dropzone:focus-visible{border-color:hsl(var(--primary));background:hsl(var(--primary)/.075);outline:none;transform:translateY(-1px)}
+.helpdesk-dropzone svg{color:hsl(var(--primary))}.helpdesk-dropzone strong{color:hsl(var(--fg));font-size:.78rem}.helpdesk-dropzone span{font-size:.68rem}.helpdesk-dropzone small{color:hsl(var(--fg-subtle));font-size:.58rem}
+.attachment-row{display:flex;align-items:center;gap:.65rem;border:1px solid hsl(var(--border));border-radius:.7rem;background:hsl(var(--surface-2)/.55);padding:.6rem .7rem}.attachment-row>svg{flex:none;color:hsl(var(--primary))}.attachment-row small{color:hsl(var(--fg-subtle));font-size:.58rem}
+.dark .helpdesk-dropzone{background:hsl(var(--primary)/.07)}
+
 /* Dashboard semantic cards: restrained colour in light mode, luminous contrast in dark mode. */
 .dashboard-card{--card-tone:59 130 246;position:relative;isolation:isolate;border-color:rgb(var(--card-tone)/.25)!important;background:linear-gradient(135deg,rgb(var(--card-tone)/.12) 0%,hsl(var(--surface)) 58%,rgb(var(--card-tone)/.045) 100%)!important;box-shadow:0 12px 30px -24px rgb(var(--card-tone)/.75),inset 0 1px 0 rgb(255 255 255/.7);transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease}
 .dashboard-card:before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:linear-gradient(180deg,rgb(var(--card-tone)),rgb(var(--card-tone)/.28));z-index:-1}

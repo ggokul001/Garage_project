@@ -1,11 +1,16 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import fs from 'node:fs';
+import path from 'node:path';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import multer from 'multer';
 import { RowDataPacket } from 'mysql2';
 import { z } from 'zod';
 import { execute, query } from '../config/db';
 import { env } from '../config/env';
 import { authenticate, getPermissions, requirePermission } from '../middleware/auth';
+import {companyStorage} from '../utils/uploadStorage';
+import {sendMail} from '../utils/mailer';
 
 const router=Router();
 const asyncRoute=(fn:(req:Request,res:Response)=>Promise<void>)=>(req:Request,res:Response,next:NextFunction)=>fn(req,res).catch(next);
@@ -148,12 +153,28 @@ router.put('/users/:id/permissions',authenticate,requirePermission('PERMISSION_A
   const users=await query<RowDataPacket>('SELECT id FROM users WHERE id=? AND company_id=?',[req.params.id,req.user!.company_id]);if(!users[0]){res.status(404).json({message:'User not found'});return}const overrides=z.array(z.object({permission_id:z.coerce.number().positive(),allowed:z.boolean()})).parse(req.body.overrides??[]);await execute('DELETE FROM user_permission_overrides WHERE user_id=?',[req.params.id]);for(const o of overrides)await execute('INSERT INTO user_permission_overrides(user_id,permission_id,allowed) VALUES(?,?,?)',[req.params.id,o.permission_id,o.allowed]);res.json({message:'User permissions updated'});
 }));
 
+const helpDeskExtensions=new Set(['.pdf','.jpg','.jpeg','.png','.webp','.doc','.docx','.xls','.xlsx','.txt']);
+const helpDeskUpload=multer({storage:companyStorage('help-desk',req=>Number(req.user!.company_id)),limits:{fileSize:env.maxUploadSizeMb*1024*1024,files:10},fileFilter:(_req,file,callback)=>helpDeskExtensions.has(path.extname(file.originalname).toLowerCase())?callback(null,true):callback(new Error('Only PDF, image, Word, Excel and text documents are allowed'))}).array('files',10);
+const cleanupHelpDeskFiles=(files:Express.Multer.File[])=>files.forEach(file=>{try{fs.unlinkSync(file.path)}catch{}});
+const escapeHtml=(value:string)=>value.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
+
 router.get('/help-desk',authenticate,asyncRoute(async(req,res)=>{
-  const all=req.user!.permissions.includes('HELPDESK_VIEW_ALL');const rows=await query<RowDataPacket & Record<string,unknown>>(`SELECT t.*,u.full_name user_name FROM help_desk_tickets t JOIN users u ON u.id=t.user_id WHERE t.company_id=? ${all?'':'AND t.user_id=?'} ORDER BY t.created_at DESC`,all?[req.user!.company_id]:[req.user!.company_id,req.user!.id]);res.json({data:rows});
+  const rows=await query<RowDataPacket&{company_name:string;company_email:string|null;user_email:string;support_email:string|null;platform_email:string|null}>(`SELECT c.name company_name,c.email company_email,u.email user_email,p.support_email,p.email platform_email FROM users u JOIN companies c ON c.id=u.company_id LEFT JOIN platform_profile p ON p.id=1 WHERE u.id=? AND u.company_id=?`,[req.user!.id,req.user!.company_id]);
+  const data=rows[0];if(!data){res.status(404).json({message:'Company support profile not found'});return}
+  res.json({data:{company_name:data.company_name,from_email:data.company_email||data.user_email,to_email:data.support_email||env.helpDeskRecipient||data.platform_email||'',max_files:10,max_file_size_mb:env.maxUploadSizeMb}});
 }));
-router.post('/help-desk',authenticate,asyncRoute(async(req,res)=>{
-  const parsed=z.object({subject:z.string().min(3),category:z.enum(['technical','data','access','training','other']),priority:z.enum(['low','medium','high','critical']),description:z.string().min(10)}).safeParse(req.body);if(!parsed.success){res.status(422).json({message:parsed.error.issues[0].message});return;}
-  const ticketNo=`HD-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(Date.now()).slice(-5)}`;await execute('INSERT INTO help_desk_tickets(company_id,ticket_no,user_id,subject,category,priority,description) VALUES(?,?,?,?,?,?,?)',[req.user!.company_id,ticketNo,req.user!.id,parsed.data.subject,parsed.data.category,parsed.data.priority,parsed.data.description]);res.status(201).json({message:`Ticket ${ticketNo} created`});
+router.post('/help-desk',authenticate,helpDeskUpload,asyncRoute(async(req,res)=>{
+  const files=(req.files as Express.Multer.File[])??[];let raw:unknown={};try{raw=JSON.parse(String(req.body.data??'{}'))}catch{cleanupHelpDeskFiles(files);res.status(422).json({message:'Invalid support request'});return}
+  const parsed=z.object({from_email:z.string().trim().email('Enter a valid reply email address'),description:z.string().trim().min(10,'Describe the problem with at least 10 characters').max(5000)}).safeParse(raw);if(!parsed.success){cleanupHelpDeskFiles(files);res.status(422).json({message:parsed.error.issues[0].message});return}
+  const context=await query<RowDataPacket&{company_name:string;company_code:string;support_email:string|null;platform_email:string|null;user_name:string}>(`SELECT c.name company_name,c.code company_code,p.support_email,p.email platform_email,u.full_name user_name FROM users u JOIN companies c ON c.id=u.company_id LEFT JOIN platform_profile p ON p.id=1 WHERE u.id=? AND u.company_id=?`,[req.user!.id,req.user!.company_id]);
+  const info=context[0],recipient=String(info?.support_email||env.helpDeskRecipient||info?.platform_email||'').trim();if(!info||!recipient){cleanupHelpDeskFiles(files);res.status(422).json({message:'Support recipient email is not configured. Contact the Super Administrator.'});return}
+  const ticketNo=`HD-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(Date.now()).slice(-5)}`,subject=`Support Request ${ticketNo} - ${info.company_name}`;
+  const created=await execute('INSERT INTO help_desk_tickets(company_id,ticket_no,user_id,from_email,recipient_email,subject,category,priority,description,mail_status) VALUES(?,?,?,?,?,?,"other","medium",?,"pending")',[req.user!.company_id,ticketNo,req.user!.id,parsed.data.from_email,recipient,subject,parsed.data.description]);
+  for(const file of files)await execute('INSERT INTO help_desk_attachments(company_id,ticket_id,original_name,stored_name,file_path,mime_type,file_size,uploaded_by) VALUES(?,?,?,?,?,?,?,?)',[req.user!.company_id,created.insertId,file.originalname,file.filename,file.path,file.mimetype,file.size,req.user!.id]);
+  try{
+    const result=await sendMail({to:recipient,replyTo:parsed.data.from_email,subject,text:`Ticket: ${ticketNo}\nCompany: ${info.company_name} (${info.company_code})\nSubmitted by: ${info.user_name}\nReply email: ${parsed.data.from_email}\n\n${parsed.data.description}`,html:`<h2>New Ara Garage support request</h2><p><strong>Ticket:</strong> ${escapeHtml(ticketNo)}<br><strong>Company:</strong> ${escapeHtml(info.company_name)} (${escapeHtml(info.company_code)})<br><strong>Submitted by:</strong> ${escapeHtml(info.user_name)}<br><strong>Reply email:</strong> ${escapeHtml(parsed.data.from_email)}</p><hr><p style="white-space:pre-wrap">${escapeHtml(parsed.data.description)}</p>`,attachments:files.map(file=>({filename:file.originalname,path:file.path,contentType:file.mimetype}))});
+    await execute('UPDATE help_desk_tickets SET mail_status="sent",mail_message_id=?,status="open" WHERE id=?',[String(result.messageId??''),created.insertId]);res.status(201).json({data:{id:created.insertId,ticket_no:ticketNo},message:`Support request ${ticketNo} emailed successfully`});
+  }catch(error){const message=error instanceof Error?error.message:'Unable to send support email';await execute('UPDATE help_desk_tickets SET mail_status="failed",mail_error=? WHERE id=?',[message.slice(0,500),created.insertId]);res.status(502).json({message:`Request saved as ${ticketNo}, but email could not be sent: ${message}`})}
 }));
 
 export default router;

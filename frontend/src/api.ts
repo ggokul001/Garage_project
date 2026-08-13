@@ -11,7 +11,7 @@ client.interceptors.request.use((config) => {
   return config;
 });
 client.interceptors.response.use((r) => r, (error) => {
-  const data=error.response?.data??{},message=String(data.message??'Unable to complete request'),code=String(data.code??''),hasSession=Boolean(localStorage.getItem('ara-garage.token'));
+  const data=error.response?.data??{},timedOut=error.code==='ECONNABORTED',message=String(data.message??(timedOut?'The request is taking longer than expected. Please wait and check before submitting again.':'Unable to complete request')),code=String(data.code??''),hasSession=Boolean(localStorage.getItem('ara-garage.token'));
   if(hasSession&&(code==='COMPANY_INACTIVE'||code==='TRIAL_EXPIRED'))sessionStorage.setItem('ara-garage.access-blocked',JSON.stringify({code,message,details:data.details??{}}));
   if(hasSession&&(error.response?.status===401||code==='COMPANY_INACTIVE'||code==='TRIAL_EXPIRED')){localStorage.removeItem('ara-garage.token');window.location.assign(`${import.meta.env.BASE_URL}login`)}
   return Promise.reject(Object.assign(new Error(message),{code,details:data.details??{}}));
@@ -50,8 +50,8 @@ export const accessApi={
   changePassword:async(currentPassword:string,newPassword:string)=>(await client.post('/auth/change-password',{currentPassword,newPassword})).data,
   userPermissions:async(id:number)=>(await client.get(`/users/${id}/permissions`)).data.data as {user?:User;permissions:Permission[];inherited:string[];effective:string[];overrides:{permission_id:number;allowed:number}[]},
   saveUserPermissions:async(id:number,overrides:{permission_id:number;allowed:boolean}[])=>(await client.put(`/users/${id}/permissions`,{overrides})).data,
-  helpDesk:async()=>(await client.get('/help-desk')).data.data as RecordData[],
-  createTicket:async(data:Record<string,unknown>)=>(await client.post('/help-desk',data)).data,
+  helpDesk:async()=>(await client.get('/help-desk')).data.data as {company_name:string;from_email:string;to_email:string;max_files:number;max_file_size_mb:number},
+  createTicket:async(data:Record<string,unknown>,files:File[])=>{const form=new FormData();form.append('data',JSON.stringify(data));files.forEach(file=>form.append('files',file));return(await client.post('/help-desk',form,{timeout:180000})).data},
   dashboard:async(financial_year_id:number|undefined,view:'operations'|'md')=>(await client.get('/dashboard',{params:{financial_year_id,view}})).data.data as Record<string,any>,
   notifications:async()=>(await client.get('/notifications')).data as {data:AppNotification[];meta:{unread:number}},
   notificationState:async(key:string,action:'READ'|'ACKNOWLEDGE'|'DISMISS_TODAY')=>(await client.post('/notifications/state',{key,action})).data,
