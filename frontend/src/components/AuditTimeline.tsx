@@ -5,29 +5,9 @@ import { AuditRow, reportApi, superAdminApi } from '../api';
 import { useAuth } from '../authStore';
 import { Modal } from './Modal';
 import { friendlyColumn } from '../utils/report';
+import {AuditValue,normalizeAuditData} from './AuditValue';
 
 const excludedFields = ['updated_at', 'created_at', 'updated_by', 'created_by', 'password_hash'];
-
-function parse(value: AuditRow['old_values']) {
-  if (!value) return {};
-  if (typeof value === 'object') return value as Record<string, unknown>;
-  try {
-    return JSON.parse(value) as Record<string, unknown>;
-  } catch {
-    return { value };
-  }
-}
-
-function normalized(value:AuditRow['old_values']){
-  const source=parse(value),result:Record<string,unknown>={};
-  for(const[key,item]of Object.entries(source)){
-    if(key!=='data'&&key!=='_submitted'){result[key]=item;continue}
-    let expanded=item;
-    if(typeof expanded==='string'){try{expanded=JSON.parse(expanded)}catch{result[key]=expanded;continue}}
-    if(expanded&&typeof expanded==='object'&&!Array.isArray(expanded))Object.assign(result,expanded as Record<string,unknown>);else result[key]=expanded;
-  }
-  return result;
-}
 
 function displayValue(value: unknown) {
   if (value === null || value === undefined || value === '') return '\u2014';
@@ -127,8 +107,8 @@ export function AuditTimeline({
 
 function AuditEvent({ row, initiallyOpen }: { row: AuditRow; initiallyOpen: boolean }) {
   const [open, setOpen] = useState(initiallyOpen);
-  const oldData = normalized(row.old_values);
-  const newData = normalized(row.new_values);
+  const oldData = normalizeAuditData(row.old_values);
+  const newData = normalizeAuditData(row.new_values);
   const changes = useMemo(() => {
     const candidates = row.action === 'DELETE' ? Object.keys(oldData) : Object.keys(newData);
     return candidates.filter((key) => !excludedFields.includes(key) && !same(oldData[key], newData[key]));
@@ -157,8 +137,8 @@ function AuditEvent({ row, initiallyOpen }: { row: AuditRow; initiallyOpen: bool
               <div className="rounded-lg border border-border p-3" key={key}>
                 <strong className="text-xs">{friendlyColumn(key)}</strong>
                 <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                  <Value label="OLD" value={oldData[key]} />
-                  <Value label={row.action === 'DELETE' ? 'REMOVED' : 'NEW'} value={newData[key]} />
+                  <Value label="OLD" value={oldData[key]} fieldKey={key}/>
+                  <Value label={row.action === 'DELETE' ? 'REMOVED' : 'NEW'} value={newData[key]} fieldKey={key}/>
                 </div>
               </div>
             ))}
@@ -170,8 +150,8 @@ function AuditEvent({ row, initiallyOpen }: { row: AuditRow; initiallyOpen: bool
   );
 }
 
-function Value({ label, value }: { label: string; value: unknown }) {
-  return <div className="min-w-0 rounded-lg bg-surface-2 p-3"><span className="text-[9px] font-bold tracking-wider text-fg-subtle">{label}</span><pre className="mt-1 whitespace-pre-wrap break-words font-sans text-xs text-fg">{displayValue(value)}</pre></div>;
+function Value({ label, value,fieldKey }: { label: string; value: unknown;fieldKey:string }) {
+  return <div className="min-w-0 rounded-lg bg-surface-2 p-3"><span className="text-[9px] font-bold tracking-wider text-fg-subtle">{label}</span><div className="mt-2"><AuditValue value={value} fieldKey={fieldKey}/></div></div>;
 }
 
 function Info({ label, value }: { label: string; value: unknown }) {
