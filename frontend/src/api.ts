@@ -54,6 +54,7 @@ export const accessApi={
 
 export type Company=RecordData&{code:string;name:string;legal_name?:string;account_type:'TRIAL'|'PAID';trial_started_at?:string;trial_ends_at?:string;inactive_reason?:string;inactive_at?:string;phone?:string;email?:string;website?:string;gstin?:string;pan?:string;address_line1?:string;address_line2?:string;city?:string;state?:string;pincode?:string;max_users?:number;max_branches?:number;billing_cycle?:'MONTHLY'|'ONE_TIME';monthly_fee?:number;billing_start_month?:string;billing_due_day?:number;user_count?:number;branch_count?:number;admin_name?:string;admin_username?:string;admin_email?:string;trial_days_remaining?:number};
 export const superAdminApi={
+  dashboard:async()=>(await client.get('/super-admin/dashboard')).data.data as Record<string,any>,
   companies:async(params:{page:number;pageSize:number;search:string;status?:string})=>(await client.get('/super-admin/companies',{params})).data as {data:Company[];meta:{page:number;pageSize:number;total:number}},
   company:async(id:number)=>(await client.get(`/super-admin/companies/${id}`)).data.data as Company&{admins:RecordData[];history:RecordData[]},
   createCompany:async(data:Record<string,unknown>)=>(await client.post('/super-admin/companies',data)).data,

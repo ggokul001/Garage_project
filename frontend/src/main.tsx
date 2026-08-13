@@ -35,6 +35,7 @@ import { CompaniesPage } from './pages/superAdmin/CompaniesPage';
 import { PaymentEntryPage } from './pages/superAdmin/PaymentEntryPage';
 import { PaymentReportPage } from './pages/superAdmin/PaymentReportPage';
 import { PlatformProfilePage } from './pages/superAdmin/PlatformProfilePage';
+import { SuperAdminDashboardPage } from './pages/superAdmin/SuperAdminDashboardPage';
 import {transactionApi} from './api';
 import {printSalarySlip,printWorkOrder} from './utils/companyPrint';
 import './styles.css';
@@ -44,7 +45,7 @@ const client=new QueryClient({defaultOptions:{queries:{retry:1,refetchOnWindowFo
 
 function Protected(){const token=useAuth(s=>s.token),ready=useAuth(s=>s.ready),restore=useAuth(s=>s.restore);useEffect(()=>{restore()},[restore]);if(!ready)return <div className="app-loading"><BrandMark/><span>Loading Ara Garage workspace…</span></div>;return token?<Layout/>:<Navigate to="/login" replace/>}
 function PermissionRoute({permission,children}:{permission:string;children:React.ReactNode}){const has=useAuth(s=>s.has);return has(permission)?<>{children}</>:<Navigate to="/" replace/>}
-function Home(){const user=useAuth(s=>s.user);return user?.role_code==='SUPER_ADMIN'?<Navigate to="/super-admin/companies" replace/>:<Dashboard view="operations"/>}
+function Home(){const user=useAuth(s=>s.user);return user?.role_code==='SUPER_ADMIN'?<Navigate to="/super-admin/dashboard" replace/>:<Dashboard view="operations"/>}
 
 function TenantPrintBridge(){
   useEffect(()=>{
@@ -68,6 +69,7 @@ function App(){return <><TenantPrintBridge/><Routes>
   <Route path="/login" element={<LoginPage/>}/>
   <Route element={<Protected/>}>
     <Route index element={<Home/>}/>
+    <Route path="super-admin/dashboard" element={<SuperAdminDashboardPage/>}/>
     <Route path="super-admin/companies" element={<CompaniesPage/>}/>
     <Route path="super-admin/platform-profile" element={<PlatformProfilePage/>}/>
     <Route path="super-admin/payments" element={<PaymentEntryPage/>}/>
