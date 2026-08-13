@@ -1,20 +1,23 @@
 import { FormEvent,useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowRight,BellRing,Check,CheckCircle2,ClipboardList,Eye,EyeOff,IndianRupee,LockKeyhole,Mail,Monitor,Moon,PackageSearch,ShieldCheck,Sparkles,Sun } from 'lucide-react';
+import { AlertTriangle,ArrowRight,BellRing,Building2,CalendarX2,Check,CheckCircle2,ClipboardList,Eye,EyeOff,IndianRupee,LockKeyhole,Mail,Monitor,Moon,PackageSearch,ShieldCheck,Sparkles,Sun } from 'lucide-react';
 import { useAuth } from '../authStore';
 import { Theme,useTheme } from '../ThemeProvider';
 import { BrandLogo } from '../components/BrandLogo';
+import { Modal } from '../components/Modal';
 
 const themeOptions:[Theme,typeof Sun,string][]= [['light',Sun,'Light'],['dark',Moon,'Dark'],['system',Monitor,'System']];
+type AccessBlock={code:'TRIAL_EXPIRED'|'COMPANY_INACTIVE';message:string;details?:{trial_ends_at?:string;company_name?:string;inactive_reason?:string}};
+const storedAccessBlock=()=>{try{const raw=sessionStorage.getItem('ara-garage.access-blocked');sessionStorage.removeItem('ara-garage.access-blocked');if(!raw)return null;const value=JSON.parse(raw) as AccessBlock;return value.code==='TRIAL_EXPIRED'||value.code==='COMPANY_INACTIVE'?value:null}catch{return null}};
 
 export function LoginPage(){
   const token=useAuth(s=>s.token),loginAction=useAuth(s=>s.login);
   const {theme,setTheme}=useTheme();
-  const [login,setLogin]=useState(''),[password,setPassword]=useState(''),[show,setShow]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState('');
+  const [login,setLogin]=useState(''),[password,setPassword]=useState(''),[show,setShow]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState(''),[accessBlock,setAccessBlock]=useState<AccessBlock|null>(storedAccessBlock);
   if(token)return <Navigate to="/" replace/>;
 
-  const submit=async(e:FormEvent)=>{e.preventDefault();setLoading(true);setError('');try{await loginAction(login,password)}catch(err){setError(err instanceof Error?err.message:'Unable to sign in')}finally{setLoading(false)}};
+  const submit=async(e:FormEvent)=>{e.preventDefault();setLoading(true);setError('');try{await loginAction(login,password)}catch(err){const problem=err as Error&{code?:string;details?:AccessBlock['details']};if(problem.code==='TRIAL_EXPIRED'||problem.code==='COMPANY_INACTIVE')setAccessBlock({code:problem.code,message:problem.message,details:problem.details});else setError(problem.message||'Unable to sign in')}finally{setLoading(false)}};
 
   return <div className="auth-page">
     <div className="auth-aurora auth-aurora-one"/><div className="auth-aurora auth-aurora-two"/><div className="auth-grid-mask"/>
@@ -49,6 +52,22 @@ export function LoginPage(){
         </div>
       </motion.section>
     </main>
+    <Modal open={!!accessBlock} title={accessBlock?.code==='TRIAL_EXPIRED'?'Trial period expired':'Company access inactive'} onClose={()=>setAccessBlock(null)} footer={<button className="btn-primary" onClick={()=>setAccessBlock(null)}>Okay, understood</button>}>
+      {accessBlock&&<AccessBlockedContent block={accessBlock}/>} 
+    </Modal>
     <footer className="auth-footer"><span>© {new Date().getFullYear()} Ara Garage</span><i aria-hidden="true"/><span>Developed by <strong>ARA Softwares</strong></span></footer>
   </div>;
+}
+
+function AccessBlockedContent({block}:{block:AccessBlock}){
+  const trial=block.code==='TRIAL_EXPIRED',Icon=trial?CalendarX2:Building2;
+  const end=block.details?.trial_ends_at?new Date(block.details.trial_ends_at).toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'}):null;
+  return <div className={`access-block-dialog ${trial?'trial':'inactive'}`}>
+    <div className="access-block-icon"><Icon size={28}/></div>
+    <div><span className="access-block-label">Access not available</span><h3>{trial?'Your free trial has ended':'Your company account is inactive'}</h3><p>{trial?'The trial access period for this company has been completed. Company users cannot sign in until the account is activated.':'Access to this company workspace has been disabled by the Super Administrator. All users under this company are temporarily unable to sign in.'}</p></div>
+    {block.details?.company_name&&<div className="access-block-fact"><span>Company</span><strong>{block.details.company_name}</strong></div>}
+    {trial&&end&&<div className="access-block-fact"><span>Trial ended on</span><strong>{end}</strong></div>}
+    {!trial&&block.details?.inactive_reason&&<div className="access-block-fact"><span>Reason</span><strong>{block.details.inactive_reason}</strong></div>}
+    <div className="access-block-help"><AlertTriangle size={17}/><div><strong>What should you do?</strong><p>Contact the Ara Garage administrator to activate the subscription or restore company access.</p></div></div>
+  </div>
 }

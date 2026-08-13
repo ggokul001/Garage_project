@@ -43,8 +43,8 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       if(!user.company_id)return res.status(403).json({message:'Your user is not assigned to a company'});
       const trialExpired=user.account_type==='TRIAL'&&!!user.trial_ends_at&&new Date(user.trial_ends_at).getTime()<=Date.now();
       if(trialExpired&&user.company_status==='active'){const changed=await execute('UPDATE companies SET status="inactive",inactive_at=NOW(),inactive_reason="Trial period expired" WHERE id=? AND status="active"',[user.company_id]);if(changed.affectedRows)await execute('INSERT INTO company_status_history(company_id,old_status,new_status,reason)VALUES(?,"active","inactive","Trial period expired")',[user.company_id])}
-      if(trialExpired)return res.status(403).json({message:'Your trial period has expired. Please contact the administrator to activate your account.'});
-      if(user.company_status!=='active')return res.status(403).json({message:'Your company account is inactive. Please contact the administrator.'});
+      if(trialExpired)return res.status(403).json({code:'TRIAL_EXPIRED',message:'Your trial period has expired. Please contact the administrator to activate your account.',details:{trial_ends_at:user.trial_ends_at}});
+      if(user.company_status!=='active')return res.status(403).json({code:'COMPANY_INACTIVE',message:'Your company account is inactive. Please contact the administrator.'});
     }
     req.user = { id: user.id, username: user.username, role: user.role_code, permissions: await getPermissions(user.id), company_id:user.company_id, is_super_admin:isSuperAdmin };
     next();

@@ -11,9 +11,10 @@ client.interceptors.request.use((config) => {
   return config;
 });
 client.interceptors.response.use((r) => r, (error) => {
-  const message=String(error.response?.data?.message??'Unable to complete request'),hasSession=Boolean(localStorage.getItem('ara-garage.token'));
-  if(hasSession&&(error.response?.status===401||message.includes('company account is inactive')||message.includes('trial period has expired'))){localStorage.removeItem('ara-garage.token');window.location.assign(`${import.meta.env.BASE_URL}login`)}
-  return Promise.reject(new Error(message));
+  const data=error.response?.data??{},message=String(data.message??'Unable to complete request'),code=String(data.code??''),hasSession=Boolean(localStorage.getItem('ara-garage.token'));
+  if(hasSession&&(code==='COMPANY_INACTIVE'||code==='TRIAL_EXPIRED'))sessionStorage.setItem('ara-garage.access-blocked',JSON.stringify({code,message,details:data.details??{}}));
+  if(hasSession&&(error.response?.status===401||code==='COMPANY_INACTIVE'||code==='TRIAL_EXPIRED')){localStorage.removeItem('ara-garage.token');window.location.assign(`${import.meta.env.BASE_URL}login`)}
+  return Promise.reject(Object.assign(new Error(message),{code,details:data.details??{}}));
 });
 
 export const masterApi = {

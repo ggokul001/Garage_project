@@ -19,14 +19,14 @@ async function userDetails(id:number){
 router.post('/auth/login',asyncRoute(async(req,res)=>{
   const parsed=z.object({login:z.string().trim().min(1),password:z.string().min(1)}).safeParse(req.body);
   if(!parsed.success){res.status(422).json({message:'Username and password are required'});return;}
-  const rows=await query<RowDataPacket & {id:number;password_hash:string;status:string;role_code:string;company_id:number|null;company_status:string|null;account_type:string|null;trial_ends_at:string|null}>(`SELECT u.id,u.password_hash,u.status,u.company_id,r.code role_code,c.status company_status,c.account_type,c.trial_ends_at FROM users u JOIN roles r ON r.id=u.role_id LEFT JOIN companies c ON c.id=u.company_id WHERE u.username=? OR u.email=? LIMIT 1`,[parsed.data.login,parsed.data.login]);
+  const rows=await query<RowDataPacket & {id:number;password_hash:string;status:string;role_code:string;company_id:number|null;company_status:string|null;company_name:string|null;inactive_reason:string|null;account_type:string|null;trial_ends_at:string|null}>(`SELECT u.id,u.password_hash,u.status,u.company_id,r.code role_code,c.status company_status,c.name company_name,c.inactive_reason,c.account_type,c.trial_ends_at FROM users u JOIN roles r ON r.id=u.role_id LEFT JOIN companies c ON c.id=u.company_id WHERE u.username=? OR u.email=? LIMIT 1`,[parsed.data.login,parsed.data.login]);
   const found=rows[0];
   if(!found||found.status!=='active'||!(await bcrypt.compare(parsed.data.password,found.password_hash))){res.status(401).json({message:'Invalid username/email or password'});return;}
   if(found.role_code!=='SUPER_ADMIN'){
     const expired=found.account_type==='TRIAL'&&!!found.trial_ends_at&&new Date(found.trial_ends_at).getTime()<=Date.now();
     if(expired&&found.company_id){const changed=await execute('UPDATE companies SET status="inactive",inactive_at=NOW(),inactive_reason="Trial period expired" WHERE id=? AND status="active"',[found.company_id]);if(changed.affectedRows)await execute('INSERT INTO company_status_history(company_id,old_status,new_status,reason)VALUES(?,"active","inactive","Trial period expired")',[found.company_id])}
-    if(expired){res.status(403).json({message:'Your trial period has expired. Please contact the administrator to activate your account.'});return}
-    if(found.company_status!=='active'){res.status(403).json({message:'Your company account is inactive. Please contact the administrator.'});return}
+    if(expired){res.status(403).json({code:'TRIAL_EXPIRED',message:'Your trial period has expired. Please contact the administrator to activate your account.',details:{company_name:found.company_name,trial_ends_at:found.trial_ends_at}});return}
+    if(found.company_status!=='active'){res.status(403).json({code:'COMPANY_INACTIVE',message:'Your company account is inactive. Please contact the administrator.',details:{company_name:found.company_name,inactive_reason:found.inactive_reason}});return}
   }
   await execute('UPDATE users SET last_login_at=NOW() WHERE id=?',[found.id]);
   const token=jwt.sign({sub:found.id,role:found.role_code},env.jwtSecret,{expiresIn:env.jwtAccessExpires as jwt.SignOptions['expiresIn']});
