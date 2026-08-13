@@ -36,6 +36,7 @@ import { PaymentEntryPage } from './pages/superAdmin/PaymentEntryPage';
 import { PaymentReportPage } from './pages/superAdmin/PaymentReportPage';
 import { PlatformProfilePage } from './pages/superAdmin/PlatformProfilePage';
 import { SuperAdminDashboardPage } from './pages/superAdmin/SuperAdminDashboardPage';
+import { SuperAdminAuditPage } from './pages/superAdmin/SuperAdminAuditPage';
 import {transactionApi} from './api';
 import {printSalarySlip,printWorkOrder} from './utils/companyPrint';
 import './styles.css';
@@ -74,6 +75,7 @@ function App(){return <><TenantPrintBridge/><Routes>
     <Route path="super-admin/platform-profile" element={<PlatformProfilePage/>}/>
     <Route path="super-admin/payments" element={<PaymentEntryPage/>}/>
     <Route path="super-admin/payment-report" element={<PaymentReportPage/>}/>
+    <Route path="super-admin/audit" element={<SuperAdminAuditPage/>}/>
     <Route path="md-dashboard" element={<PermissionRoute permission="MD_DASHBOARD_VIEW"><Dashboard view="md"/></PermissionRoute>}/>
     <Route path="user-guide" element={<UserGuidePage/>}/><Route path="help-desk" element={<HelpDeskPage/>}/><Route path="change-password" element={<ChangePasswordPage/>}/>
     <Route path="users" element={<PermissionRoute permission="USER_VIEW"><UsersPage/></PermissionRoute>}/><Route path="users/:id/permissions" element={<PermissionRoute permission="PERMISSION_ASSIGN"><UserPermissionsPage/></PermissionRoute>}/><Route path="roles" element={<PermissionRoute permission="ROLE_VIEW"><RolesPage/></PermissionRoute>}/>

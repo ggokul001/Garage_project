@@ -97,11 +97,38 @@ router.post('/super-admin/companies/:id/status',asyncRoute(async(req,res)=>{
 }));
 
 router.post('/super-admin/companies/:id/extend-trial',asyncRoute(async(req,res)=>{
-  const parsed=z.object({days:z.coerce.number().int().min(1).max(365)}).safeParse(req.body);if(!parsed.success){res.status(422).json({message:'Trial extension must be between 1 and 365 days'});return}
+  const parsed=z.object({days:z.coerce.number().int().min(1).max(365),reason:z.string().trim().min(3,'Enter a valid extension reason').max(255)}).safeParse(req.body);if(!parsed.success){res.status(422).json({message:parsed.error.issues[0]?.message??'Invalid trial extension'});return}
+  const current=await query<RowDataPacket&{name:string;trial_ends_at:string|null}>('SELECT name,trial_ends_at FROM companies WHERE id=?',[req.params.id]);if(!current[0]){res.status(404).json({message:'Company not found'});return}
   await execute(`UPDATE companies SET account_type='TRIAL',trial_started_at=COALESCE(trial_started_at,NOW()),trial_ends_at=DATE_ADD(GREATEST(COALESCE(trial_ends_at,NOW()),NOW()),INTERVAL ? DAY),status='active',inactive_reason=NULL,inactive_at=NULL WHERE id=?`,[parsed.data.days,req.params.id]);
-  await execute('INSERT INTO company_status_history(company_id,new_status,reason,changed_by)VALUES(?,"active",?,?)',[req.params.id,`Trial extended by ${parsed.data.days} days`,req.user!.id]);res.json({message:`Trial extended by ${parsed.data.days} days`});
+  const note=`Trial extended by ${parsed.data.days} days — ${parsed.data.reason}`;
+  await execute('INSERT INTO company_status_history(company_id,new_status,reason,changed_by)VALUES(?,"active",?,?)',[req.params.id,note,req.user!.id]);res.json({data:{id:Number(req.params.id),name:current[0].name,days:parsed.data.days,reason:parsed.data.reason},message:`Trial extended by ${parsed.data.days} days`});
 }));
 
 router.post('/super-admin/companies/:id/convert-paid',asyncRoute(async(req,res)=>{await execute(`UPDATE companies SET account_type='PAID',trial_ends_at=NULL,status='active',inactive_reason=NULL,inactive_at=NULL WHERE id=?`,[req.params.id]);await execute('INSERT INTO company_status_history(company_id,new_status,reason,changed_by)VALUES(?,"active","Converted to paid account",?)',[req.params.id,req.user!.id]);res.json({message:'Company converted to paid account'})}));
+
+router.get('/super-admin/audit/options',asyncRoute(async(_req,res)=>{
+  const modules=await query<RowDataPacket&{module_name:string}>('SELECT DISTINCT module_name FROM audit_logs WHERE module_name IN ("Platform Companies","Platform Profile","Super Admin Payments","Company Billing") ORDER BY module_name');
+  const users=await query<RowDataPacket&Record<string,unknown>>(`SELECT DISTINCT u.id,u.full_name,u.username FROM audit_logs a JOIN users u ON u.id=a.user_id JOIN roles r ON r.id=u.role_id WHERE r.code='SUPER_ADMIN' ORDER BY u.full_name`);
+  const companies=await query<RowDataPacket&Record<string,unknown>>('SELECT id,code,name FROM companies ORDER BY name');
+  res.json({data:{modules:modules.map(row=>row.module_name),users,companies}});
+}));
+
+router.get('/super-admin/audit/timeline',asyncRoute(async(req,res)=>{
+  const entity=String(req.query.entity_type??'').trim(),recordId=String(req.query.record_id??'').trim();
+  if(!entity||!recordId){res.status(422).json({message:'Entity type and record id are required'});return}
+  const rows=await query<RowDataPacket&Record<string,unknown>>(`SELECT a.*,u.full_name user_name,u.username,c.name company_name,c.code company_code FROM audit_logs a JOIN users u ON u.id=a.user_id LEFT JOIN companies c ON c.id=a.company_id WHERE a.entity_type=? AND a.record_id=? ORDER BY a.id DESC LIMIT 200`,[entity,recordId]);
+  res.json({data:rows});
+}));
+
+router.get('/super-admin/audit',asyncRoute(async(req,res)=>{
+  const page=Math.max(1,Number(req.query.page)||1),pageSize=Math.min(100,Math.max(10,Number(req.query.pageSize)||15));
+  const search=String(req.query.search??'').trim(),module=String(req.query.module??''),action=String(req.query.action??''),companyId=Number(req.query.company_id)||0,userId=Number(req.query.user_id)||0,from=String(req.query.from??''),to=String(req.query.to??'');
+  const clauses=[`r.code='SUPER_ADMIN'`],params:unknown[]=[];
+  if(search){clauses.push('(a.record_display_name LIKE ? OR a.record_id LIKE ? OR a.route LIKE ? OR u.full_name LIKE ? OR c.name LIKE ?)');params.push(...Array(5).fill(`%${search}%`))}
+  if(module){clauses.push('a.module_name=?');params.push(module)}if(action){clauses.push('a.action=?');params.push(action)}if(companyId){clauses.push('a.company_id=?');params.push(companyId)}if(userId){clauses.push('a.user_id=?');params.push(userId)}if(from){clauses.push('a.created_at>=?');params.push(`${from} 00:00:00`)}if(to){clauses.push('a.created_at<=?');params.push(`${to} 23:59:59`)}
+  const where=clauses.join(' AND '),count=await query<RowDataPacket&{total:number}>(`SELECT COUNT(*) total FROM audit_logs a JOIN users u ON u.id=a.user_id JOIN roles r ON r.id=u.role_id LEFT JOIN companies c ON c.id=a.company_id WHERE ${where}`,params);
+  const rows=await query<RowDataPacket&Record<string,unknown>>(`SELECT a.*,u.full_name user_name,u.username,c.name company_name,c.code company_code FROM audit_logs a JOIN users u ON u.id=a.user_id JOIN roles r ON r.id=u.role_id LEFT JOIN companies c ON c.id=a.company_id WHERE ${where} ORDER BY a.id DESC LIMIT ? OFFSET ?`,[...params,pageSize,(page-1)*pageSize]);
+  res.json({data:rows,meta:{page,pageSize,total:Number(count[0]?.total??0)}});
+}));
 
 export default router;

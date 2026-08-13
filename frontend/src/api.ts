@@ -66,8 +66,11 @@ export const superAdminApi={
   updateCompany:async(id:number,data:Record<string,unknown>)=>(await client.put(`/super-admin/companies/${id}`,data)).data,
   saveCompanyAdmin:async(id:number,data:Record<string,unknown>)=>(await client.post(`/super-admin/companies/${id}/admin`,data)).data,
   updateStatus:async(id:number,status:'active'|'inactive',reason:string)=>(await client.post(`/super-admin/companies/${id}/status`,{status,reason})).data,
-  extendTrial:async(id:number,days:number)=>(await client.post(`/super-admin/companies/${id}/extend-trial`,{days})).data,
+  extendTrial:async(id:number,days:number,reason:string)=>(await client.post(`/super-admin/companies/${id}/extend-trial`,{days,reason})).data,
   convertPaid:async(id:number)=>(await client.post(`/super-admin/companies/${id}/convert-paid`)).data,
+  auditOptions:async()=>(await client.get('/super-admin/audit/options')).data.data as {modules:string[];users:RecordData[];companies:RecordData[]},
+  audit:async(params:Record<string,unknown>)=>(await client.get('/super-admin/audit',{params})).data as {data:AuditRow[];meta:{page:number;pageSize:number;total:number}},
+  auditTimeline:async(entity_type:string,record_id:string|number)=>(await client.get('/super-admin/audit/timeline',{params:{entity_type,record_id}})).data.data as AuditRow[],
 };
 
 export const superAdminPaymentApi={

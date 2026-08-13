@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, ChevronUp, Clock3, History, UserRound } from 'lucide-react';
-import { AuditRow, reportApi } from '../api';
+import { AuditRow, reportApi, superAdminApi } from '../api';
+import { useAuth } from '../authStore';
 import { Modal } from './Modal';
 import { friendlyColumn } from '../utils/report';
 
@@ -15,6 +16,17 @@ function parse(value: AuditRow['old_values']) {
   } catch {
     return { value };
   }
+}
+
+function normalized(value:AuditRow['old_values']){
+  const source=parse(value),result:Record<string,unknown>={};
+  for(const[key,item]of Object.entries(source)){
+    if(key!=='data'&&key!=='_submitted'){result[key]=item;continue}
+    let expanded=item;
+    if(typeof expanded==='string'){try{expanded=JSON.parse(expanded)}catch{result[key]=expanded;continue}}
+    if(expanded&&typeof expanded==='object'&&!Array.isArray(expanded))Object.assign(result,expanded as Record<string,unknown>);else result[key]=expanded;
+  }
+  return result;
 }
 
 function displayValue(value: unknown) {
@@ -69,9 +81,10 @@ export function AuditTimeline({
   title: string;
   code?: string;
 }) {
+  const superAdmin=useAuth(state=>state.user?.role_code==='SUPER_ADMIN');
   const logs = useQuery({
     queryKey: ['audit-timeline', entityType, recordId, title],
-    queryFn: () => reportApi.auditTimeline(entityType, recordId, title),
+    queryFn: () => superAdmin?superAdminApi.auditTimeline(entityType,recordId):reportApi.auditTimeline(entityType, recordId, title),
     enabled: open,
   });
   const chronological = [...(logs.data ?? [])].reverse();
@@ -114,8 +127,8 @@ export function AuditTimeline({
 
 function AuditEvent({ row, initiallyOpen }: { row: AuditRow; initiallyOpen: boolean }) {
   const [open, setOpen] = useState(initiallyOpen);
-  const oldData = parse(row.old_values);
-  const newData = parse(row.new_values);
+  const oldData = normalized(row.old_values);
+  const newData = normalized(row.new_values);
   const changes = useMemo(() => {
     const candidates = row.action === 'DELETE' ? Object.keys(oldData) : Object.keys(newData);
     return candidates.filter((key) => !excludedFields.includes(key) && !same(oldData[key], newData[key]));
