@@ -993,6 +993,19 @@ CREATE TABLE IF NOT EXISTS company_payment_attachments (
   CONSTRAINT fk_payment_attachments_deleted_by FOREIGN KEY(deleted_by) REFERENCES users(id)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS user_notification_states (
+  user_id BIGINT UNSIGNED NOT NULL,
+  notification_key VARCHAR(190) NOT NULL,
+  read_at DATETIME NULL,
+  acknowledged_at DATETIME NULL,
+  dismissed_until DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY(user_id,notification_key),
+  KEY idx_notification_state_user_read(user_id,read_at),
+  CONSTRAINT fk_notification_state_user FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 INSERT IGNORE INTO roles (code,name,description,is_system,company_id) VALUES
 ('SUPER_ADMIN','Super Administrator','ARA product owner access',1,NULL),
 ('COMPANY_ADMIN','Company Administrator','Full access within one company',1,NULL);

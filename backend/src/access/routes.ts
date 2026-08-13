@@ -33,6 +33,38 @@ router.post('/auth/login',asyncRoute(async(req,res)=>{
   res.json({data:{token,user:await userDetails(found.id)}});
 }));
 router.get('/auth/me',authenticate,asyncRoute(async(req,res)=>{res.json({data:await userDetails(req.user!.id)});}));
+
+type NotificationItem={key:string;type:'TRIAL'|'PAYMENT';severity:'info'|'warning'|'critical';title:string;message:string;created_at:string;details:Record<string,unknown>;is_read:boolean;acknowledged:boolean};
+async function companyNotifications(req:Request){
+  if(req.user!.is_super_admin||!req.user!.company_id)return[] as NotificationItem[];
+  const companyId=Number(req.user!.company_id),items:NotificationItem[]=[];
+  const companies=await query<RowDataPacket&Record<string,unknown>>(`SELECT c.id,c.name,c.account_type,c.trial_ends_at,DATEDIFF(DATE(c.trial_ends_at),CURDATE()) trial_days_remaining,p.email support_email,p.phone support_phone FROM companies c LEFT JOIN platform_profile p ON p.id=1 WHERE c.id=?`,[companyId]);
+  const company=companies[0],days=Number(company?.trial_days_remaining);
+  if(company?.account_type==='TRIAL'&&company.trial_ends_at&&days>=0&&days<=10){
+    const date=String(company.trial_ends_at).slice(0,10),severity=days<=2?'critical':days<=5?'warning':'info';
+    items.push({key:`trial:${date}`,type:'TRIAL',severity,title:days===0?'Trial expires today':`Trial expires in ${days} day${days===1?'':'s'}`,message:`Your ${company.name} trial period ${days===0?'expires today':`will expire in ${days} days`}. Please contact Ara Garage support to continue without interruption.`,created_at:new Date().toISOString(),details:{company_name:company.name,trial_end_date:date,days_remaining:days,support_email:company.support_email,support_phone:company.support_phone},is_read:false,acknowledged:false});
+  }
+  const mayViewPayment=['ADMIN','COMPANY_ADMIN'].includes(req.user!.role)||req.user!.permissions.includes('ACCOUNTS_VIEW');
+  if(mayViewPayment){
+    const dues=await query<RowDataPacket&Record<string,unknown>>(`SELECT COUNT(*) pending_months,SUM(status='PARTIAL') partial_months,MIN(billing_month) oldest_pending_month,COALESCE(SUM(GREATEST(due_amount-paid_amount,0)),0) outstanding_amount FROM company_monthly_dues WHERE company_id=? AND status IN('PENDING','PARTIAL')`,[companyId]);
+    const due=dues[0],outstanding=Number(due?.outstanding_amount??0),pending=Number(due?.pending_months??0);
+    if(outstanding>0&&pending>0){
+      const payments=await query<RowDataPacket&{last_payment_date:string|null}>('SELECT MAX(payment_date) last_payment_date FROM company_payments WHERE company_id=? AND deleted_at IS NULL',[companyId]);
+      const oldest=String(due.oldest_pending_month).slice(0,10),amountKey=outstanding.toFixed(2);
+      items.push({key:`payment:${oldest}:${pending}:${amountKey}`,type:'PAYMENT',severity:pending>=3?'critical':'warning',title:`${pending} billing month${pending===1?'':'s'} pending`,message:`Subscription billing has an outstanding balance of ₹ ${outstanding.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}.`,created_at:new Date().toISOString(),details:{pending_months:pending,partial_months:Number(due.partial_months??0),oldest_pending_month:oldest,outstanding_amount:outstanding,last_payment_date:payments[0]?.last_payment_date??null},is_read:false,acknowledged:false});
+    }
+  }
+  if(!items.length)return items;
+  const states=await query<RowDataPacket&{notification_key:string;read_at:string|null;acknowledged_at:string|null;dismissed_until:string|null}>(`SELECT notification_key,read_at,acknowledged_at,dismissed_until FROM user_notification_states WHERE user_id=?`,[req.user!.id]);
+  const map=new Map(states.map(row=>[row.notification_key,row]));
+  return items.filter(item=>{const state=map.get(item.key);return !state?.dismissed_until||new Date(state.dismissed_until).getTime()<=Date.now()}).map(item=>{const state=map.get(item.key);return{...item,is_read:!!state?.read_at,acknowledged:!!state?.acknowledged_at}});
+}
+
+router.get('/notifications',authenticate,asyncRoute(async(req,res)=>{const data=await companyNotifications(req);res.json({data,meta:{unread:data.filter(item=>!item.is_read).length}})}));
+const notificationStateSchema=z.object({key:z.string().trim().min(1).max(190),action:z.enum(['READ','ACKNOWLEDGE','DISMISS_TODAY'])});
+router.post('/notifications/state',authenticate,asyncRoute(async(req,res)=>{const parsed=notificationStateSchema.safeParse(req.body);if(!parsed.success){res.status(422).json({message:'Invalid notification action'});return}const{key,action}=parsed.data;await execute(`INSERT INTO user_notification_states(user_id,notification_key,read_at,acknowledged_at,dismissed_until)VALUES(?,?,NOW(),${action==='ACKNOWLEDGE'?'NOW()':'NULL'},${action==='DISMISS_TODAY'?'DATE_ADD(CURDATE(),INTERVAL 1 DAY)':'NULL'}) ON DUPLICATE KEY UPDATE read_at=COALESCE(read_at,NOW()),acknowledged_at=${action==='ACKNOWLEDGE'?'NOW()':'acknowledged_at'},dismissed_until=${action==='DISMISS_TODAY'?'DATE_ADD(CURDATE(),INTERVAL 1 DAY)':'dismissed_until'}`,[req.user!.id,key]);res.json({message:action==='DISMISS_TODAY'?'Reminder hidden until tomorrow':'Notification updated'})}));
+router.post('/notifications/read-all',authenticate,asyncRoute(async(req,res)=>{const current=await companyNotifications(req);for(const item of current)await execute('INSERT INTO user_notification_states(user_id,notification_key,read_at)VALUES(?,?,NOW()) ON DUPLICATE KEY UPDATE read_at=COALESCE(read_at,NOW())',[req.user!.id,item.key]);res.json({message:'All notifications marked as read'})}));
+
 router.post('/auth/change-password',authenticate,asyncRoute(async(req,res)=>{
   const parsed=z.object({currentPassword:z.string().min(1),newPassword:z.string().min(8)}).safeParse(req.body);
   if(!parsed.success){res.status(422).json({message:'New password must contain at least 8 characters'});return;}

@@ -30,6 +30,7 @@ export type Permission={id:number;code:string;name:string;module:string;action:s
 export type Role=RecordData & {code:string;name:string;description?:string;is_system:number;permission_count:number;permission_ids:number[]};
 export type User=RecordData & {username:string;email:string;full_name:string;role_id:number;role_name:string;role_code:string;company_id?:number;company_name?:string;account_type?:'TRIAL'|'PAID';trial_ends_at?:string;branch_id?:number;branch_name?:string;permissions?:string[]};
 export type NavItem={id:number;parent_id?:number;title:string;route?:string;icon:string;permission_code?:string;children:NavItem[]};
+export type AppNotification={key:string;type:'TRIAL'|'PAYMENT';severity:'info'|'warning'|'critical';title:string;message:string;created_at:string;details:Record<string,unknown>;is_read:boolean;acknowledged:boolean};
 export const accessApi={
   login:async(login:string,password:string)=>(await client.post('/auth/login',{login,password})).data.data as {token:string;user:User},
   me:async()=>(await client.get('/auth/me')).data.data as User,
@@ -50,6 +51,9 @@ export const accessApi={
   helpDesk:async()=>(await client.get('/help-desk')).data.data as RecordData[],
   createTicket:async(data:Record<string,unknown>)=>(await client.post('/help-desk',data)).data,
   dashboard:async(financial_year_id:number|undefined,view:'operations'|'md')=>(await client.get('/dashboard',{params:{financial_year_id,view}})).data.data as Record<string,any>,
+  notifications:async()=>(await client.get('/notifications')).data as {data:AppNotification[];meta:{unread:number}},
+  notificationState:async(key:string,action:'READ'|'ACKNOWLEDGE'|'DISMISS_TODAY')=>(await client.post('/notifications/state',{key,action})).data,
+  readAllNotifications:async()=>(await client.post('/notifications/read-all')).data,
 };
 
 export type Company=RecordData&{code:string;name:string;legal_name?:string;account_type:'TRIAL'|'PAID';trial_started_at?:string;trial_ends_at?:string;inactive_reason?:string;inactive_at?:string;phone?:string;email?:string;website?:string;gstin?:string;pan?:string;address_line1?:string;address_line2?:string;city?:string;state?:string;pincode?:string;max_users?:number;max_branches?:number;billing_cycle?:'MONTHLY'|'ONE_TIME';monthly_fee?:number;billing_start_month?:string;billing_due_day?:number;user_count?:number;branch_count?:number;admin_name?:string;admin_username?:string;admin_email?:string;trial_days_remaining?:number};
