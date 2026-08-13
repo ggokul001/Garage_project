@@ -35,6 +35,7 @@ function context(path: string, method: string) {
     else if(section==='payments'){entity='company-payments';module='Super Admin Payments';if(clean.includes('attachments'))action=method==='DELETE'?'ATTACHMENT DELETE':'ATTACHMENT UPLOAD';}
     else if(section==='billing'){entity=parts.includes('dues')?'company-monthly-dues':'company-billing';module='Company Billing';action=parts.includes('dues')?'DUE CORRECTION':'BILLING UPDATE';}
     else if(section==='platform-profile'){entity='platform-profile';module='Platform Profile';action='UPDATE';}
+    else if(section==='products'){entity='platform-products';module='Product Portfolio';}
   }
   return {entity,module:module.replace(/\b\w/g,c=>c.toUpperCase()),action,parts};
 }
@@ -46,7 +47,7 @@ function displayName(body: Record<string,unknown>, responseBody: any, fallback: 
 
 async function beforeSnapshot(entity:string,parts:string[],body:Record<string,unknown>){
   let numeric=[...parts].reverse().find(value=>/^\d+$/.test(value));
-  const simple:Record<string,string>={'job-cards':'job_cards','work-orders':'work_orders',stores:'store_entries','vendor-payments':'vendor_payments','company-payments':'company_payments','salary-advances':'salary_advances',users:'users',roles:'roles',companies:'companies','company-monthly-dues':'company_monthly_dues'};
+  const simple:Record<string,string>={'job-cards':'job_cards','work-orders':'work_orders',stores:'store_entries','vendor-payments':'vendor_payments','company-payments':'company_payments','salary-advances':'salary_advances',users:'users',roles:'roles',companies:'companies','company-monthly-dues':'company_monthly_dues','platform-products':'platform_products'};
   if(entity==='company-billing'&&parts[3]){const rows=await query<RowDataPacket&Record<string,unknown>>('SELECT * FROM companies WHERE id=?',[parts[3]]);return{recordId:parts[3],snapshot:rows[0]}}
   if(entity==='platform-profile'){const rows=await query<RowDataPacket&Record<string,unknown>>('SELECT * FROM platform_profile WHERE id=1');return{recordId:'1',snapshot:rows[0]}}
   if(entity==='accounts'&&parts[1]==='receipts'&&numeric){const rows=await query<RowDataPacket&Record<string,unknown>>('SELECT * FROM payment_receipts WHERE id=?',[numeric]);return{recordId:String(rows[0]?.job_card_id??numeric),snapshot:rows[0]}}

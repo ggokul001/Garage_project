@@ -12,6 +12,7 @@ import reportRoutes from './reports/routes';
 import { auditMiddleware } from './middleware/audit';
 import superAdminRoutes from './super-admin/routes';
 import superAdminPaymentRoutes from './super-admin/paymentRoutes';
+import platformProductRoutes from './super-admin/productRoutes';
 
 export const app = express();
 app.use(helmet());
@@ -27,6 +28,7 @@ app.use(express.json({ limit: '1mb' }));
 app.use(auditMiddleware);
 app.get(`${env.apiPrefix}/health`, (_req, res) => res.json({ status: 'ok' }));
 app.use(env.apiPrefix, accessRoutes);
+app.use(env.apiPrefix, platformProductRoutes);
 app.use(env.apiPrefix, superAdminPaymentRoutes);
 app.use(env.apiPrefix, superAdminRoutes);
 app.use(env.apiPrefix, transactionRoutes);

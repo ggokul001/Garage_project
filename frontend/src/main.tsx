@@ -37,6 +37,7 @@ import { PaymentReportPage } from './pages/superAdmin/PaymentReportPage';
 import { PlatformProfilePage } from './pages/superAdmin/PlatformProfilePage';
 import { SuperAdminDashboardPage } from './pages/superAdmin/SuperAdminDashboardPage';
 import { SuperAdminAuditPage } from './pages/superAdmin/SuperAdminAuditPage';
+import { ProductPortfolioPage } from './pages/superAdmin/ProductPortfolioPage';
 import {transactionApi} from './api';
 import {printSalarySlip,printWorkOrder} from './utils/companyPrint';
 import './styles.css';
@@ -73,6 +74,7 @@ function App(){return <><TenantPrintBridge/><Routes>
     <Route path="super-admin/dashboard" element={<SuperAdminDashboardPage/>}/>
     <Route path="super-admin/companies" element={<CompaniesPage/>}/>
     <Route path="super-admin/platform-profile" element={<PlatformProfilePage/>}/>
+    <Route path="super-admin/products" element={<ProductPortfolioPage/>}/>
     <Route path="super-admin/payments" element={<PaymentEntryPage/>}/>
     <Route path="super-admin/payment-report" element={<PaymentReportPage/>}/>
     <Route path="super-admin/audit" element={<SuperAdminAuditPage/>}/>

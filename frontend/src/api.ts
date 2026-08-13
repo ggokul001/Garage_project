@@ -31,6 +31,7 @@ export type Permission={id:number;code:string;name:string;module:string;action:s
 export type Role=RecordData & {code:string;name:string;description?:string;is_system:number;permission_count:number;permission_ids:number[]};
 export type User=RecordData & {username:string;email:string;full_name:string;role_id:number;role_name:string;role_code:string;company_id?:number;company_name?:string;account_type?:'TRIAL'|'PAID';trial_ends_at?:string;branch_id?:number;branch_name?:string;permissions?:string[]};
 export type NavItem={id:number;parent_id?:number;title:string;route?:string;icon:string;permission_code?:string;children:NavItem[]};
+export type PlatformProduct=RecordData&{code:string;name:string;tagline?:string;product_url?:string;logo_data_url?:string;display_order:number;open_new_tab:number};
 export type AppNotification={key:string;type:'TRIAL'|'PAYMENT';severity:'info'|'warning'|'critical';title:string;message:string;created_at:string;details:Record<string,unknown>;is_read:boolean;acknowledged:boolean};
 export const accessApi={
   login:async(login:string,password:string)=>(await client.post('/auth/login',{login,password})).data.data as {token:string;user:User},
@@ -55,6 +56,7 @@ export const accessApi={
   notifications:async()=>(await client.get('/notifications')).data as {data:AppNotification[];meta:{unread:number}},
   notificationState:async(key:string,action:'READ'|'ACKNOWLEDGE'|'DISMISS_TODAY')=>(await client.post('/notifications/state',{key,action})).data,
   readAllNotifications:async()=>(await client.post('/notifications/read-all')).data,
+  activePlatformProducts:async()=>(await client.get('/platform-products/active')).data.data as PlatformProduct[],
 };
 
 export type Company=RecordData&{code:string;name:string;legal_name?:string;account_type:'TRIAL'|'PAID';trial_started_at?:string;trial_ends_at?:string;inactive_reason?:string;inactive_at?:string;phone?:string;email?:string;website?:string;gstin?:string;pan?:string;address_line1?:string;address_line2?:string;city?:string;state?:string;pincode?:string;max_users?:number;max_branches?:number;billing_cycle?:'MONTHLY'|'ONE_TIME';monthly_fee?:number;billing_start_month?:string;billing_due_day?:number;user_count?:number;branch_count?:number;admin_name?:string;admin_username?:string;admin_email?:string;trial_days_remaining?:number};
@@ -71,6 +73,10 @@ export const superAdminApi={
   auditOptions:async()=>(await client.get('/super-admin/audit/options')).data.data as {modules:string[];users:RecordData[];companies:RecordData[]},
   audit:async(params:Record<string,unknown>)=>(await client.get('/super-admin/audit',{params})).data as {data:AuditRow[];meta:{page:number;pageSize:number;total:number}},
   auditTimeline:async(entity_type:string,record_id:string|number)=>(await client.get('/super-admin/audit/timeline',{params:{entity_type,record_id}})).data.data as AuditRow[],
+  products:async(params:{page:number;pageSize:number;search:string})=>(await client.get('/super-admin/products',{params})).data as {data:PlatformProduct[];meta:{page:number;pageSize:number;total:number}},
+  createProduct:async(data:Record<string,unknown>,logo:File)=>{const form=new FormData();form.append('data',JSON.stringify(data));form.append('logo',logo);return(await client.post('/super-admin/products',form)).data},
+  updateProduct:async(id:number,data:Record<string,unknown>,logo?:File|null)=>{const form=new FormData();form.append('data',JSON.stringify(data));if(logo)form.append('logo',logo);return(await client.put(`/super-admin/products/${id}`,form)).data},
+  removeProduct:async(id:number)=>(await client.delete(`/super-admin/products/${id}`)).data,
 };
 
 export const superAdminPaymentApi={

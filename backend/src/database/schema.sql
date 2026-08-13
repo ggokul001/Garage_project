@@ -901,6 +901,27 @@ CREATE TABLE IF NOT EXISTS platform_profile (
   CONSTRAINT fk_platform_profile_user FOREIGN KEY(updated_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS platform_products (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(40) NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  tagline VARCHAR(200) NULL,
+  product_url VARCHAR(500) NULL,
+  logo_path VARCHAR(500) NULL,
+  logo_mime_type VARCHAR(120) NULL,
+  display_order INT NOT NULL DEFAULT 0,
+  open_new_tab TINYINT(1) NOT NULL DEFAULT 1,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  created_by BIGINT UNSIGNED NULL,
+  updated_by BIGINT UNSIGNED NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_platform_products_code (code),
+  KEY idx_platform_products_display (status,display_order,id),
+  CONSTRAINT fk_platform_products_created_by FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_platform_products_updated_by FOREIGN KEY(updated_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
 INSERT IGNORE INTO platform_profile(id,organization_name,legal_name,receipt_footer)
 VALUES(1,'Ara Garage','ARA Softwares','Thank you for your payment. This is a system-generated receipt.');
 

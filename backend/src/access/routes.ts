@@ -79,10 +79,11 @@ router.get('/navigation',authenticate,asyncRoute(async(req,res)=>{
     {id:-1,parent_id:null,title:'Dashboard',route:'/super-admin/dashboard',icon:'LayoutDashboard',permission_code:null,sort_order:1,children:[]},
     {id:-2,parent_id:null,title:'Companies',route:'/super-admin/companies',icon:'Building2',permission_code:null,sort_order:2,children:[]},
     {id:-3,parent_id:null,title:'Platform Profile',route:'/super-admin/platform-profile',icon:'Landmark',permission_code:null,sort_order:3,children:[]},
-    {id:-4,parent_id:null,title:'Payment Entry',route:'/super-admin/payments',icon:'ReceiptIndianRupee',permission_code:null,sort_order:4,children:[]},
-    {id:-5,parent_id:null,title:'Payment Report',route:'/super-admin/payment-report',icon:'FileSpreadsheet',permission_code:null,sort_order:5,children:[]},
-    {id:-6,parent_id:null,title:'Audit Log',route:'/super-admin/audit',icon:'History',permission_code:null,sort_order:6,children:[]},
-    {id:-7,parent_id:null,title:'User Guide',route:'/user-guide',icon:'BookOpen',permission_code:null,sort_order:7,children:[]},
+    {id:-4,parent_id:null,title:'Our Products',route:'/super-admin/products',icon:'PanelsTopLeft',permission_code:null,sort_order:4,children:[]},
+    {id:-5,parent_id:null,title:'Payment Entry',route:'/super-admin/payments',icon:'ReceiptIndianRupee',permission_code:null,sort_order:5,children:[]},
+    {id:-6,parent_id:null,title:'Payment Report',route:'/super-admin/payment-report',icon:'FileSpreadsheet',permission_code:null,sort_order:6,children:[]},
+    {id:-7,parent_id:null,title:'Audit Log',route:'/super-admin/audit',icon:'History',permission_code:null,sort_order:7,children:[]},
+    {id:-8,parent_id:null,title:'User Guide',route:'/user-guide',icon:'BookOpen',permission_code:null,sort_order:8,children:[]},
   ]});return}
   const rows=await query<RowDataPacket & Record<string,unknown>>(`SELECT id,parent_id,title,route,icon,permission_code,sort_order FROM navigation_items WHERE status='active' ORDER BY sort_order,title`);
   const allowed=rows.filter(row=>!row.permission_code||req.user!.permissions.includes(String(row.permission_code))) as Array<Record<string, any>>;
