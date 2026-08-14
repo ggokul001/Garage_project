@@ -1,4 +1,4 @@
-import {useMemo,useState} from 'react';
+import {useEffect,useMemo,useState} from 'react';
 import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
 import {AlertTriangle,Bell,CheckCheck,Clock3,CreditCard,X} from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -12,24 +12,28 @@ const date=(value:unknown)=>value?new Date(`${String(value).slice(0,10)}T00:00:0
 export function NotificationBell({enabled}:{enabled:boolean}){
   const user=useAuth(state=>state.user),qc=useQueryClient();
   const[open,setOpen]=useState(false),[expandedKey,setExpandedKey]=useState<string|null>(null);
+  const[previewIndex,setPreviewIndex]=useState(0);
   const query=useQuery({queryKey:['notifications',user?.id],queryFn:accessApi.notifications,enabled:enabled&&!!user&&!user?.must_change_password,refetchInterval:60000,refetchIntervalInBackground:true});
   const items=useMemo(()=>[...(query.data?.data??[])].sort((a,b)=>priority[a.severity]-priority[b.severity]),[query.data]);
-  const unread=items.filter(item=>!item.is_read).length;
+  const activeCount=items.length;
+  const previewItems=useMemo(()=>items.slice(0,3),[items]);
+  const previewItem=previewItems.length?previewItems[previewIndex%previewItems.length]:null;
   const urgent=items.some(item=>!item.acknowledged&&(item.severity==='critical'||item.severity==='warning'));
   const update=useMutation({mutationFn:({key,action}:{key:string;action:'READ'|'ACKNOWLEDGE'|'DISMISS_TODAY'})=>accessApi.notificationState(key,action),onSuccess:(response:any,variables)=>{if(variables.action!=='READ'&&response?.message)toast.success(response.message);qc.invalidateQueries({queryKey:['notifications']})},onError:(error:Error)=>toast.error(error.message)});
-  const readAll=useMutation({mutationFn:accessApi.readAllNotifications,onSuccess:()=>qc.invalidateQueries({queryKey:['notifications']}),onError:(error:Error)=>toast.error(error.message)});
+  useEffect(()=>{setPreviewIndex(0);if(previewItems.length<2)return;const timer=window.setInterval(()=>setPreviewIndex(current=>(current+1)%previewItems.length),4500);return()=>window.clearInterval(timer)},[previewItems.length,previewItems.map(item=>item.key).join('|')]);
 
   const toggleItem=(item:AppNotification)=>{
     setExpandedKey(current=>current===item.key?null:item.key);
-    if(!item.is_read)update.mutate({key:item.key,action:'READ'});
   };
   const close=()=>{setOpen(false);setExpandedKey(null)};
+  const openPreview=(item:AppNotification)=>{setOpen(true);setExpandedKey(item.key)};
   if(!enabled)return <button title="Notifications" className="header-icon"><Bell size={17}/></button>;
 
-  return <div className="relative">
-    <button aria-label="Notifications" aria-expanded={open} title={`${unread} unread notification${unread===1?'':'s'}`} className={`header-icon notification-bell ${urgent?'notification-bell-live':''}`} onClick={()=>{setOpen(value=>!value);setExpandedKey(null)}}><Bell size={17}/>{unread>0&&<span className="notification-count">{unread>9?'9+':unread}</span>}</button>
+  return <div className="notification-area relative">
+    {previewItem&&<button key={previewItem.key} className={`notification-preview severity-${previewItem.severity}`} title={previewItem.message} onClick={()=>openPreview(previewItem)}><i/><span>{previewItem.title}</span>{previewItems.length>1&&<small>{previewIndex%previewItems.length+1}/{previewItems.length}</small>}</button>}
+    <button aria-label="Notifications" aria-expanded={open} title={`${activeCount} active notification${activeCount===1?'':'s'}`} className={`header-icon notification-bell ${urgent?'notification-bell-live':''}`} onClick={()=>{setOpen(value=>!value);setExpandedKey(null)}}><Bell size={17}/>{activeCount>0&&<span className="notification-count">{activeCount>9?'9+':activeCount}</span>}</button>
     {open&&<><button className="fixed inset-0 z-30 cursor-default" aria-label="Close notifications" onClick={close}/><section className="notification-popover" aria-label="Notifications">
-      <header><div><strong>Notifications</strong><span>{unread?`${unread} unread`:'You are up to date'}</span></div><div className="flex items-center gap-1">{unread>0&&<button title="Mark all as read" onClick={()=>readAll.mutate()}><CheckCheck size={15}/></button>}<button title="Close" onClick={close}><X size={15}/></button></div></header>
+      <header><div><strong>Notifications</strong><span>{activeCount?`${activeCount} action required`:'You are up to date'}</span></div><div className="flex items-center gap-1"><button title="Close" onClick={close}><X size={15}/></button></div></header>
       <div className="notification-list">{items.length?items.map(item=><div className={`notification-item ${expandedKey===item.key?'open':''}`} key={item.key}>
         <NotificationRow item={item} onClick={()=>toggleItem(item)}/>
         {expandedKey===item.key&&<NotificationInlineDetail item={item} busy={update.isPending} onAcknowledge={()=>{update.mutate({key:item.key,action:'ACKNOWLEDGE'});setExpandedKey(null)}} onRemind={()=>{update.mutate({key:item.key,action:'DISMISS_TODAY'});setExpandedKey(null)}}/>}
