@@ -24,9 +24,10 @@ async function userDetails(id:number){
 router.post('/auth/login',asyncRoute(async(req,res)=>{
   const parsed=z.object({login:z.string().trim().min(1),password:z.string().min(1)}).safeParse(req.body);
   if(!parsed.success){res.status(422).json({message:'Username and password are required'});return;}
-  const rows=await query<RowDataPacket & {id:number;password_hash:string;status:string;role_code:string;company_id:number|null;company_status:string|null;company_name:string|null;inactive_reason:string|null;account_type:string|null;trial_ends_at:string|null}>(`SELECT u.id,u.password_hash,u.status,u.company_id,r.code role_code,c.status company_status,c.name company_name,c.inactive_reason,c.account_type,c.trial_ends_at FROM users u JOIN roles r ON r.id=u.role_id LEFT JOIN companies c ON c.id=u.company_id WHERE u.username=? OR u.email=? LIMIT 1`,[parsed.data.login,parsed.data.login]);
-  const found=rows[0];
-  if(!found||found.status!=='active'||!(await bcrypt.compare(parsed.data.password,found.password_hash))){res.status(401).json({message:'Invalid username/email or password'});return;}
+  const rows=await query<RowDataPacket & {id:number;password_hash:string;status:string;role_code:string;company_id:number|null;company_status:string|null;company_name:string|null;inactive_reason:string|null;account_type:string|null;trial_ends_at:string|null}>(`SELECT u.id,u.password_hash,u.status,u.company_id,r.code role_code,c.status company_status,c.name company_name,c.inactive_reason,c.account_type,c.trial_ends_at FROM users u JOIN roles r ON r.id=u.role_id LEFT JOIN companies c ON c.id=u.company_id WHERE u.username=? OR u.email=? ORDER BY u.company_id IS NULL DESC,u.id`,[parsed.data.login,parsed.data.login]);
+  let found:typeof rows[number]|undefined;
+  for(const row of rows){if(await bcrypt.compare(parsed.data.password,row.password_hash)){found=row;break}}
+  if(!found||found.status!=='active'){res.status(401).json({message:'Invalid username/email or password'});return;}
   if(found.role_code!=='SUPER_ADMIN'){
     const expired=found.account_type==='TRIAL'&&!!found.trial_ends_at&&new Date(found.trial_ends_at).getTime()<=Date.now();
     if(expired&&found.company_id){const changed=await execute('UPDATE companies SET status="inactive",inactive_at=NOW(),inactive_reason="Trial period expired" WHERE id=? AND status="active"',[found.company_id]);if(changed.affectedRows)await execute('INSERT INTO company_status_history(company_id,old_status,new_status,reason)VALUES(?,"active","inactive","Trial period expired")',[found.company_id])}
@@ -101,7 +102,7 @@ router.get('/permissions',authenticate,requirePermission('PERMISSION_VIEW'),asyn
 }));
 
 router.get('/roles',authenticate,requirePermission('ROLE_VIEW'),asyncRoute(async(_req,res)=>{
-  const req=_req;const roles=await query<RowDataPacket & Record<string,unknown>>(`SELECT r.*,COUNT(rp.permission_id) permission_count FROM roles r LEFT JOIN role_permissions rp ON rp.role_id=r.id WHERE r.company_id=? OR (r.company_id IS NULL AND r.code IN ('ADMIN','USER','COMPANY_ADMIN')) GROUP BY r.id ORDER BY r.name`,[req.user!.company_id]);
+  const req=_req;const roles=await query<RowDataPacket & Record<string,unknown>>(`SELECT r.*,COUNT(rp.permission_id) permission_count FROM roles r LEFT JOIN role_permissions rp ON rp.role_id=r.id WHERE r.company_id=? OR (r.company_id IS NULL AND r.code IN ('ADMIN','USER','COMPANY_ADMIN') AND NOT EXISTS(SELECT 1 FROM roles cr WHERE cr.company_id=? AND cr.code=CONCAT(r.code,'_',?))) GROUP BY r.id ORDER BY r.name`,[req.user!.company_id,req.user!.company_id,req.user!.company_id]);
   const mappings=await query<RowDataPacket & {role_id:number;permission_id:number}>('SELECT role_id,permission_id FROM role_permissions');
   res.json({data:roles.map(role=>({...role,permission_ids:mappings.filter(m=>Number(m.role_id)===Number(role.id)).map(m=>m.permission_id)}))});
 }));
@@ -115,9 +116,20 @@ router.post('/roles',authenticate,requirePermission('ROLE_CREATE'),asyncRoute(as
 }));
 router.put('/roles/:id',authenticate,requirePermission('ROLE_UPDATE'),asyncRoute(async(req,res)=>{
   const parsed=roleSchema.safeParse(req.body);if(!parsed.success){res.status(422).json({message:parsed.error.issues[0].message});return;}
-  const owned=await query<RowDataPacket>('SELECT id FROM roles WHERE id=? AND company_id=?',[req.params.id,req.user!.company_id]);if(!owned[0]){res.status(404).json({message:'Company role not found'});return}await execute('UPDATE roles SET name=?,description=?,status=? WHERE id=? AND company_id=?',[parsed.data.name,parsed.data.description||null,parsed.data.status,req.params.id,req.user!.company_id]);
-  await execute('DELETE FROM role_permissions WHERE role_id=?',[req.params.id]);
-  for(const permissionId of parsed.data.permission_ids) await execute('INSERT INTO role_permissions(role_id,permission_id) VALUES(?,?)',[req.params.id,permissionId]);
+  const roles=await query<RowDataPacket&{id:number;code:string;company_id:number|null;is_system:number}>('SELECT id,code,company_id,is_system FROM roles WHERE id=? AND (company_id=? OR company_id IS NULL)',[req.params.id,req.user!.company_id]);const role=roles[0];if(!role){res.status(404).json({message:'Role not found'});return}
+  let roleId=Number(role.id);
+  if(role.company_id===null){
+    if(!['ADMIN','USER','COMPANY_ADMIN'].includes(role.code)){res.status(404).json({message:'Company role not found'});return}
+    const companyCode=`${role.code}_${req.user!.company_id}`;
+    await execute('INSERT IGNORE INTO roles(company_id,code,name,description,status,is_system) VALUES(?,?,?,?,?,0)',[req.user!.company_id,companyCode,parsed.data.name,parsed.data.description||null,parsed.data.status]);
+    const created=await query<RowDataPacket&{id:number}>('SELECT id FROM roles WHERE company_id=? AND code=?',[req.user!.company_id,companyCode]);roleId=Number(created[0].id);
+    await execute('UPDATE roles SET name=?,description=?,status=? WHERE id=? AND company_id=?',[parsed.data.name,parsed.data.description||null,parsed.data.status,roleId,req.user!.company_id]);
+    await execute('UPDATE users SET role_id=? WHERE company_id=? AND role_id=?',[roleId,req.user!.company_id,role.id]);
+  }else{
+    await execute('UPDATE roles SET name=?,description=?,status=? WHERE id=? AND company_id=?',[parsed.data.name,parsed.data.description||null,parsed.data.status,roleId,req.user!.company_id]);
+  }
+  await execute('DELETE FROM role_permissions WHERE role_id=?',[roleId]);
+  for(const permissionId of parsed.data.permission_ids) await execute('INSERT INTO role_permissions(role_id,permission_id) VALUES(?,?)',[roleId,permissionId]);
   res.json({message:'Role updated'});
 }));
 router.delete('/roles/:id',authenticate,requirePermission('ROLE_DELETE'),asyncRoute(async(req,res)=>{
@@ -136,10 +148,12 @@ const userSchema=z.object({username:z.string().trim().min(3),email:z.string().em
 router.post('/users',authenticate,requirePermission('USER_CREATE'),asyncRoute(async(req,res)=>{
   const parsed=userSchema.extend({password:z.string().min(8)}).safeParse(req.body);if(!parsed.success){res.status(422).json({message:parsed.error.issues[0].message});return;}
   const limits=await query<RowDataPacket&{max_users:number|null;used:number}>('SELECT c.max_users,(SELECT COUNT(*) FROM users WHERE company_id=c.id) used FROM companies c WHERE c.id=?',[req.user!.company_id]);if(limits[0]?.max_users&&Number(limits[0].used)>=Number(limits[0].max_users)){res.status(409).json({message:'Company user limit reached'});return}
+  const duplicate=await query<RowDataPacket&{id:number}>('SELECT id FROM users WHERE company_id=? AND (username=? OR email=?) LIMIT 1',[req.user!.company_id,parsed.data.username,parsed.data.email]);if(duplicate[0]){res.status(409).json({message:'Username or email already exists in this company'});return}
   await execute('INSERT INTO users(company_id,username,email,full_name,password_hash,role_id,branch_id,status) SELECT ?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM roles WHERE id=? AND (company_id=? OR company_id IS NULL)) AND (? IS NULL OR EXISTS(SELECT 1 FROM branches WHERE id=? AND company_id=?))',[req.user!.company_id,parsed.data.username,parsed.data.email,parsed.data.full_name,await bcrypt.hash(parsed.data.password,12),parsed.data.role_id,parsed.data.branch_id||null,parsed.data.status,parsed.data.role_id,req.user!.company_id,parsed.data.branch_id||null,parsed.data.branch_id||null,req.user!.company_id]);res.status(201).json({message:'User created'});
 }));
 router.put('/users/:id',authenticate,requirePermission('USER_UPDATE'),asyncRoute(async(req,res)=>{
   const parsed=userSchema.safeParse(req.body);if(!parsed.success){res.status(422).json({message:parsed.error.issues[0].message});return;}
+  const duplicate=await query<RowDataPacket&{id:number}>('SELECT id FROM users WHERE company_id=? AND id<>? AND (username=? OR email=?) LIMIT 1',[req.user!.company_id,req.params.id,parsed.data.username,parsed.data.email]);if(duplicate[0]){res.status(409).json({message:'Username or email already exists in this company'});return}
   await execute('UPDATE users SET username=?,email=?,full_name=?,role_id=?,branch_id=?,status=? WHERE id=? AND company_id=?',[parsed.data.username,parsed.data.email,parsed.data.full_name,parsed.data.role_id,parsed.data.branch_id||null,parsed.data.status,req.params.id,req.user!.company_id]);res.json({message:'User updated'});
 }));
 router.post('/users/:id/reset-password',authenticate,requirePermission('USER_UPDATE'),asyncRoute(async(req,res)=>{

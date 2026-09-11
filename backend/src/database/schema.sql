@@ -188,8 +188,9 @@ CREATE TABLE IF NOT EXISTS role_permissions (
 
 CREATE TABLE IF NOT EXISTS users (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  username VARCHAR(60) NOT NULL UNIQUE,
-  email VARCHAR(150) NOT NULL UNIQUE,
+  company_id BIGINT UNSIGNED NULL,
+  username VARCHAR(60) NOT NULL,
+  email VARCHAR(150) NOT NULL,
   full_name VARCHAR(150) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
   role_id BIGINT UNSIGNED NOT NULL,
@@ -199,6 +200,8 @@ CREATE TABLE IF NOT EXISTS users (
   last_login_at DATETIME NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_users_company_username (company_id, username),
+  UNIQUE KEY uq_users_company_email (company_id, email),
   CONSTRAINT fk_users_role FOREIGN KEY (role_id) REFERENCES roles(id),
   CONSTRAINT fk_users_branch FOREIGN KEY (branch_id) REFERENCES branches(id)
 ) ENGINE=InnoDB;

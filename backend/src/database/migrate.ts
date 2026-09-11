@@ -105,6 +105,13 @@ async function migrate() {
     const[composite]=await connection.query<mysql.RowDataPacket[]>('SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND INDEX_NAME=?',[env.db.database,table,newIndex]);
     if(!composite[0])await connection.query(`ALTER TABLE ${mysql.escapeId(table)} ADD UNIQUE INDEX ${mysql.escapeId(newIndex)} (company_id,${mysql.escapeId(legacyIndex)})`);
   }
+  const userUnique:[string,string][]=[['username','uq_users_company_username'],['email','uq_users_company_email']];
+  for(const[legacyIndex,newIndex]of userUnique){
+    const[legacy]=await connection.query<mysql.RowDataPacket[]>('SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=? AND TABLE_NAME="users" AND INDEX_NAME=?',[env.db.database,legacyIndex]);
+    if(legacy[0])await connection.query(`ALTER TABLE users DROP INDEX ${mysql.escapeId(legacyIndex)}`);
+    const[composite]=await connection.query<mysql.RowDataPacket[]>('SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=? AND TABLE_NAME="users" AND INDEX_NAME=?',[env.db.database,newIndex]);
+    if(!composite[0])await connection.query(`ALTER TABLE users ADD UNIQUE INDEX ${mysql.escapeId(newIndex)} (company_id,${mysql.escapeId(legacyIndex)})`);
+  }
   const[sequencePk]=await connection.query<mysql.RowDataPacket[]>(`SELECT COUNT(*) column_count FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA=? AND TABLE_NAME='master_code_sequences' AND CONSTRAINT_NAME='PRIMARY'`,[env.db.database]);
   if(Number(sequencePk[0]?.column_count)===1)await connection.query('ALTER TABLE master_code_sequences MODIFY company_id BIGINT UNSIGNED NOT NULL,DROP PRIMARY KEY,ADD PRIMARY KEY(master_name,company_id)');
   const passwordHash = await bcrypt.hash('Admin@123', env.bcryptRounds);
