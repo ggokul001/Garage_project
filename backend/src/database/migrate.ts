@@ -53,8 +53,10 @@ async function migrate() {
   }
   const[profileFiles]=await connection.query<mysql.RowDataPacket[]>('SELECT id,logo_path,updated_at FROM platform_profile WHERE logo_path IS NOT NULL');
   for(const file of profileFiles){
-    const target=path.join(uploadsRoot,'platform','platform-profile',monthFolder(file.updated_at),path.basename(String(file.logo_path)));
-    if(await moveFile(String(file.logo_path),target))await connection.query('UPDATE platform_profile SET logo_path=? WHERE id=?',[target,file.id]);
+    const recordedSource=String(file.logo_path),localLegacySource=path.join(uploadsRoot,'platform-profile',path.basename(recordedSource));
+    const target=path.join(uploadsRoot,'platform','platform-profile',monthFolder(file.updated_at),path.basename(recordedSource));
+    const safeSource=insideUploads(recordedSource)?recordedSource:localLegacySource;
+    if(await moveFile(safeSource,target))await connection.query('UPDATE platform_profile SET logo_path=? WHERE id=?',[target,file.id]);
   }
   const[companyLogos]=await connection.query<mysql.RowDataPacket[]>('SELECT id,code,logo_path,updated_at FROM companies WHERE logo_path IS NOT NULL');
   for(const file of companyLogos){

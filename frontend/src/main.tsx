@@ -18,6 +18,7 @@ import { JobCardFormPage } from './pages/jobCards/JobCardFormPage';
 import { WorkOrderListPage } from './pages/workOrders/WorkOrderListPage';
 import { WorkOrderFormPage } from './pages/workOrders/WorkOrderFormPage';
 import { AccountsPage } from './pages/accounts/AccountsPage';
+import { BillingPage } from './pages/billing/BillingPage';
 import { StoreListPage } from './pages/stores/StoreListPage';
 import { StoreFormPage } from './pages/stores/StoreFormPage';
 import { VendorPaymentPage } from './pages/payments/VendorPaymentPage';
@@ -38,8 +39,7 @@ import { PlatformProfilePage } from './pages/superAdmin/PlatformProfilePage';
 import { SuperAdminDashboardPage } from './pages/superAdmin/SuperAdminDashboardPage';
 import { SuperAdminAuditPage } from './pages/superAdmin/SuperAdminAuditPage';
 import { ProductPortfolioPage } from './pages/superAdmin/ProductPortfolioPage';
-import {transactionApi} from './api';
-import {printSalarySlip,printWorkOrder} from './utils/companyPrint';
+import {printSalarySlip} from './utils/companyPrint';
 import './styles.css';
 
 enableNumericTextInputs();
@@ -54,8 +54,6 @@ function TenantPrintBridge(){
     const handle=(event:MouseEvent)=>{
       const button=(event.target as Element|null)?.closest('button');
       if(!button||!button.textContent?.trim().toLowerCase().includes('print')||window.location.pathname.includes('/super-admin/'))return;
-      const workOrder=window.location.pathname.match(/\/work-orders\/(\d+)/);
-      if(workOrder){event.preventDefault();event.stopPropagation();transactionApi.workOrder(Number(workOrder[1])).then(printWorkOrder).catch(error=>toast.error(error.message));return}
       if(window.location.pathname.endsWith('/payroll')&&document.querySelector('.salary-slip')){
         const text=document.querySelector('.salary-slip')?.textContent??'',queries=client.getQueriesData<any>({queryKey:['payroll']});
         const row=queries.flatMap(([,data])=>data?.data??[]).find(item=>text.includes(String(item.employee_code))&&text.includes(String(item.employee_name)));
@@ -84,7 +82,7 @@ function App(){return <><TenantPrintBridge/><Routes>
     <Route path="masters/:slug" element={<MasterPage/>}/>
     <Route path="job-cards" element={<PermissionRoute permission="JOB_CARD_VIEW"><JobCardListPage/></PermissionRoute>}/><Route path="job-cards/new" element={<PermissionRoute permission="JOB_CARD_CREATE"><JobCardFormPage/></PermissionRoute>}/><Route path="job-cards/:id" element={<PermissionRoute permission="JOB_CARD_VIEW"><JobCardFormPage/></PermissionRoute>}/>
     <Route path="work-orders" element={<PermissionRoute permission="WORK_ORDER_VIEW"><WorkOrderListPage/></PermissionRoute>}/><Route path="work-orders/:id" element={<PermissionRoute permission="WORK_ORDER_VIEW"><WorkOrderFormPage/></PermissionRoute>}/>
-    <Route path="accounts" element={<PermissionRoute permission="ACCOUNTS_VIEW"><AccountsPage/></PermissionRoute>}/><Route path="stores" element={<PermissionRoute permission="STORE_VIEW"><StoreListPage/></PermissionRoute>}/><Route path="stores/new" element={<PermissionRoute permission="STORE_CREATE"><StoreFormPage/></PermissionRoute>}/><Route path="stores/:id" element={<PermissionRoute permission="STORE_VIEW"><StoreFormPage/></PermissionRoute>}/>
+    <Route path="accounts" element={<PermissionRoute permission="ACCOUNTS_VIEW"><AccountsPage/></PermissionRoute>}/><Route path="billing" element={<PermissionRoute permission="BILLING_VIEW"><BillingPage/></PermissionRoute>}/><Route path="stores" element={<PermissionRoute permission="STORE_VIEW"><StoreListPage/></PermissionRoute>}/><Route path="stores/new" element={<PermissionRoute permission="STORE_CREATE"><StoreFormPage/></PermissionRoute>}/><Route path="stores/:id" element={<PermissionRoute permission="STORE_VIEW"><StoreFormPage/></PermissionRoute>}/>
     <Route path="vendor-payments" element={<PermissionRoute permission="VENDOR_PAYMENT_VIEW"><VendorPaymentPage/></PermissionRoute>}/><Route path="reports/vendor-outstanding" element={<PermissionRoute permission="OUTSTANDING_VIEW"><VendorOutstandingPage/></PermissionRoute>}/>
     <Route path="reports/entries" element={<PermissionRoute permission="ENTRY_REPORT_VIEW"><EntryReportsPage/></PermissionRoute>}/><Route path="reports/audit" element={<PermissionRoute permission="AUDIT_VIEW"><AuditReportPage/></PermissionRoute>}/>
     <Route path="attendance" element={<PermissionRoute permission="ATTENDANCE_VIEW"><AttendancePage/></PermissionRoute>}/><Route path="salary-advances" element={<PermissionRoute permission="SALARY_ADVANCE_VIEW"><SalaryAdvancePage/></PermissionRoute>}/><Route path="payroll" element={<PermissionRoute permission="PAYROLL_VIEW"><PayrollPage/></PermissionRoute>}/>

@@ -306,7 +306,11 @@ CREATE TABLE IF NOT EXISTS vehicles (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   vehicle_number VARCHAR(30) NOT NULL UNIQUE,
   customer_id BIGINT UNSIGNED NULL,
+  vehicle_name VARCHAR(120) NULL,
   model VARCHAR(100) NULL,
+  manufacturing_year SMALLINT UNSIGNED NULL,
+  fuel_type VARCHAR(30) NULL,
+  engine_number VARCHAR(80) NULL,
   chassis_number VARCHAR(80) NULL,
   sale_date DATE NULL,
   status ENUM('active','inactive') NOT NULL DEFAULT 'active',
@@ -416,12 +420,34 @@ CREATE TABLE IF NOT EXISTS job_card_complaints (
   CONSTRAINT fk_job_complaint_job FOREIGN KEY (job_card_id) REFERENCES job_cards(id)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS job_card_vehicle_images (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_id BIGINT UNSIGNED NOT NULL,
+  job_card_id BIGINT UNSIGNED NOT NULL,
+  original_name VARCHAR(255) NOT NULL,
+  stored_name VARCHAR(255) NOT NULL,
+  file_path VARCHAR(500) NOT NULL,
+  mime_type VARCHAR(120) NOT NULL,
+  file_size BIGINT UNSIGNED NOT NULL,
+  uploaded_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  KEY idx_job_card_vehicle_images_job (job_card_id,deleted_at),
+  CONSTRAINT fk_job_vehicle_image_company FOREIGN KEY(company_id) REFERENCES companies(id),
+  CONSTRAINT fk_job_vehicle_image_job FOREIGN KEY(job_card_id) REFERENCES job_cards(id),
+  CONSTRAINT fk_job_vehicle_image_user FOREIGN KEY(uploaded_by) REFERENCES users(id),
+  CONSTRAINT fk_job_vehicle_image_deleted FOREIGN KEY(deleted_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS work_orders (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   financial_year_id BIGINT UNSIGNED NOT NULL,
   job_card_id BIGINT UNSIGNED NOT NULL UNIQUE,
   work_order_no VARCHAR(40) NOT NULL,
   work_order_type ENUM('AMC','WARRANTY','PAID') NULL,
+  service_cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+  labour_cost DECIMAL(14,2) NOT NULL DEFAULT 0,
   approval_status ENUM('draft','approved') NOT NULL DEFAULT 'draft',
   overall_status ENUM('pending','partially_completed','completed') NOT NULL DEFAULT 'pending',
   approved_at DATETIME NULL,
@@ -458,8 +484,9 @@ CREATE TABLE IF NOT EXISTS work_order_complaints (
 CREATE TABLE IF NOT EXISTS work_order_spares (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   work_order_id BIGINT UNSIGNED NOT NULL,
-  product_id BIGINT UNSIGNED NOT NULL,
-  uom_id BIGINT UNSIGNED NOT NULL,
+  spare_source ENUM('MASTER','LOCAL_PURCHASE') NOT NULL DEFAULT 'MASTER',
+  product_id BIGINT UNSIGNED NULL,
+  uom_id BIGINT UNSIGNED NULL,
   product_code VARCHAR(30) NOT NULL,
   product_name VARCHAR(150) NOT NULL,
   part_number VARCHAR(80) NULL,
@@ -535,7 +562,8 @@ INSERT IGNORE INTO permissions(code,name,module,action) VALUES
 ('PENDING_STATUS_VIEW','View Pending Sub-status','Masters','view'),('PENDING_STATUS_CREATE','Create Pending Sub-status','Masters','create'),('PENDING_STATUS_UPDATE','Update Pending Sub-status','Masters','update'),('PENDING_STATUS_DELETE','Delete Pending Sub-status','Masters','delete'),
 ('JOB_CARD_VIEW','View Job Cards','Job Card','view'),('JOB_CARD_CREATE','Create Job Cards','Job Card','create'),('JOB_CARD_UPDATE','Update Job Cards','Job Card','update'),('JOB_CARD_DELETE','Delete Job Cards','Job Card','delete'),('JOB_CARD_APPROVE','Approve Job Cards','Job Card','approve'),('JOB_CARD_PRINT','Print Job Cards','Job Card','print'),
 ('WORK_ORDER_VIEW','View Work Orders','Work Order','view'),('WORK_ORDER_UPDATE','Update Work Orders','Work Order','update'),('WORK_ORDER_DELETE','Delete Work Orders','Work Order','delete'),('WORK_ORDER_APPROVE','Approve Work Orders','Work Order','approve'),('WORK_ORDER_PRINT','Print Work Orders','Work Order','print'),
-('ACCOUNTS_VIEW','View Accounts','Accounts','view'),('PAYMENT_RECEIVE','Receive Payments','Accounts','create'),('PAYMENT_DELETE','Delete Payments','Accounts','delete');
+('ACCOUNTS_VIEW','View Accounts','Accounts','view'),('PAYMENT_RECEIVE','Receive Payments','Accounts','create'),('PAYMENT_DELETE','Delete Payments','Accounts','delete'),
+('BILLING_VIEW','View Billing','Billing','view'),('BILLING_PRINT','Print Billing','Billing','print');
 
 INSERT IGNORE INTO role_permissions(role_id,permission_id)
 SELECT r.id,p.id FROM roles r CROSS JOIN permissions p WHERE r.code='ADMIN';
@@ -543,7 +571,10 @@ SELECT r.id,p.id FROM roles r CROSS JOIN permissions p WHERE r.code='ADMIN';
 INSERT IGNORE INTO navigation_items(title,route,icon,permission_code,sort_order) VALUES
 ('Job Cards','/job-cards','ClipboardList','JOB_CARD_VIEW',30),
 ('Work Orders','/work-orders','Wrench','WORK_ORDER_VIEW',31),
-('Accounts','/accounts','IndianRupee','ACCOUNTS_VIEW',32);
+('Accounts','/accounts','IndianRupee','ACCOUNTS_VIEW',32),
+('Billing','/billing','ReceiptText','BILLING_VIEW',33);
+INSERT IGNORE INTO role_permissions(role_id,permission_id)
+SELECT r.id,p.id FROM roles r CROSS JOIN permissions p WHERE r.code='ADMIN' AND p.code IN ('BILLING_VIEW','BILLING_PRINT');
 INSERT IGNORE INTO navigation_items(parent_id,title,route,icon,permission_code,sort_order)
 SELECT id,'Vehicles','/masters/vehicles','Truck','VEHICLE_VIEW',8 FROM navigation_items WHERE title='Masters' AND route IS NULL;
 INSERT IGNORE INTO navigation_items(parent_id,title,route,icon,permission_code,sort_order)
@@ -826,6 +857,10 @@ ALTER TABLE customers ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL A
 ALTER TABLE vendors ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
 ALTER TABLE financial_years ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
 ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS vehicle_name VARCHAR(120) NULL AFTER customer_id;
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS manufacturing_year SMALLINT UNSIGNED NULL AFTER model;
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS fuel_type VARCHAR(30) NULL AFTER manufacturing_year;
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS engine_number VARCHAR(80) NULL AFTER fuel_type;
 ALTER TABLE uoms ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
 ALTER TABLE work_pending_sub_statuses ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
@@ -833,10 +868,67 @@ ALTER TABLE shifts ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTE
 ALTER TABLE document_sequences ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
 ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
 ALTER TABLE job_card_complaints ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+CREATE TABLE IF NOT EXISTS job_card_vehicle_images (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_id BIGINT UNSIGNED NOT NULL,
+  job_card_id BIGINT UNSIGNED NOT NULL,
+  original_name VARCHAR(255) NOT NULL,
+  stored_name VARCHAR(255) NOT NULL,
+  file_path VARCHAR(500) NOT NULL,
+  mime_type VARCHAR(120) NOT NULL,
+  file_size BIGINT UNSIGNED NOT NULL,
+  uploaded_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  KEY idx_job_card_vehicle_images_job (job_card_id,deleted_at),
+  CONSTRAINT fk_job_vehicle_image_company FOREIGN KEY(company_id) REFERENCES companies(id),
+  CONSTRAINT fk_job_vehicle_image_job FOREIGN KEY(job_card_id) REFERENCES job_cards(id),
+  CONSTRAINT fk_job_vehicle_image_user FOREIGN KEY(uploaded_by) REFERENCES users(id),
+  CONSTRAINT fk_job_vehicle_image_deleted FOREIGN KEY(deleted_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS work_order_vehicle_images (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_id BIGINT UNSIGNED NOT NULL,
+  work_order_id BIGINT UNSIGNED NOT NULL,
+  original_name VARCHAR(255) NOT NULL,
+  stored_name VARCHAR(255) NOT NULL,
+  file_path VARCHAR(500) NOT NULL,
+  mime_type VARCHAR(120) NOT NULL,
+  file_size BIGINT UNSIGNED NOT NULL,
+  uploaded_by BIGINT UNSIGNED NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  KEY idx_work_order_vehicle_images_order (work_order_id,deleted_at),
+  CONSTRAINT fk_wo_vehicle_image_order FOREIGN KEY (work_order_id) REFERENCES work_orders(id),
+  CONSTRAINT fk_wo_vehicle_image_company FOREIGN KEY (company_id) REFERENCES companies(id)
+) ENGINE=InnoDB;
 ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS service_cost DECIMAL(14,2) NOT NULL DEFAULT 0 AFTER work_order_type;
+ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS labour_cost DECIMAL(14,2) NOT NULL DEFAULT 0 AFTER service_cost;
 ALTER TABLE work_order_complaints ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
 ALTER TABLE work_order_spares ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE work_order_spares ADD COLUMN IF NOT EXISTS spare_source ENUM('MASTER','LOCAL_PURCHASE') NOT NULL DEFAULT 'MASTER' AFTER work_order_id;
+ALTER TABLE work_order_spares MODIFY COLUMN product_id BIGINT UNSIGNED NULL;
+ALTER TABLE work_order_spares MODIFY COLUMN uom_id BIGINT UNSIGNED NULL;
 ALTER TABLE work_order_attachments ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+CREATE TABLE IF NOT EXISTS work_order_vehicle_images (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_id BIGINT UNSIGNED NOT NULL,
+  work_order_id BIGINT UNSIGNED NOT NULL,
+  original_name VARCHAR(255) NOT NULL,
+  stored_name VARCHAR(255) NOT NULL,
+  file_path VARCHAR(500) NOT NULL,
+  mime_type VARCHAR(120) NOT NULL,
+  file_size BIGINT UNSIGNED NOT NULL,
+  uploaded_by BIGINT UNSIGNED NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  KEY idx_work_order_vehicle_images_order (work_order_id,deleted_at)
+) ENGINE=InnoDB;
 ALTER TABLE payment_receipts ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
 ALTER TABLE store_entries ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
 ALTER TABLE store_entry_details ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;

@@ -6,6 +6,7 @@ const status = z.enum(['active', 'inactive']).default('active');
 const id = z.coerce.number().int().positive();
 const email = z.union([z.string().trim().email(), z.literal(''), z.null()]).optional().transform((v) => v || null);
 const amount = z.coerce.number().min(0).default(0);
+const optionalYear = z.preprocess(v=>v===''||v===null||v===undefined?null:v,z.coerce.number().int().min(1900).max(2100).nullable()).optional();
 const optionalPattern = (pattern: RegExp, message: string, max: number) => z.union([
   z.string().trim().max(max).regex(pattern, message), z.literal(''), z.null(),
 ]).optional().transform((v) => v || null);
@@ -93,9 +94,10 @@ const configs = {
   },
   vehicles: {
     table: 'vehicles', schema: z.object({ vehicle_number: requiredText('Vehicle number',30), customer_id: id.nullish(),
-      model: optionalText, chassis_number: optionalText, sale_date: optionalText, status }),
-    columns: ['vehicle_number','customer_id','model','chassis_number','sale_date','status'],
-    search: ['m.vehicle_number','m.model','m.chassis_number','c.name'], select: 'm.*, c.name AS customer_name, c.mobile AS customer_mobile',
+      vehicle_name: optionalText, model: optionalText, manufacturing_year: optionalYear,
+      fuel_type: optionalText, engine_number: optionalText, chassis_number: optionalText, sale_date: optionalText, status }),
+    columns: ['vehicle_number','customer_id','vehicle_name','model','manufacturing_year','fuel_type','engine_number','chassis_number','sale_date','status'],
+    search: ['m.vehicle_number','m.vehicle_name','m.model','m.engine_number','m.chassis_number','c.name'], select: 'm.*, c.name AS customer_name, c.mobile AS customer_mobile',
     joins: 'LEFT JOIN customers c ON c.id=m.customer_id', orderBy: 'm.vehicle_number',
   },
   uoms: {
