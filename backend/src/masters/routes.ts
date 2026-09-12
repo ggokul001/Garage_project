@@ -98,7 +98,7 @@ router.post('/:master', requireMasterAction('CREATE'), asyncRoute(async (req, re
   if(master==='companies'){res.status(403).json({message:'Use Super Administrator company management'});return}
   if(master==='branches'){const limits=await query<RowDataPacket&{max_branches:number|null;used:number}>('SELECT c.max_branches,(SELECT COUNT(*) FROM branches WHERE company_id=c.id) used FROM companies c WHERE c.id=?',[req.user!.company_id]);if(limits[0]?.max_branches&&Number(limits[0].used)>=Number(limits[0].max_branches)){res.status(409).json({message:'Company branch limit reached'});return}}
   const prefix=codePrefix[master];
-  const autoBranch = branchScopedMasters.has(master) && !['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role)) ? { branch_id: req.user?.branch_ids?.length === 1 ? req.user.branch_ids[0] : req.body.branch_id } : {};
+  const autoBranch = branchScopedMasters.has(master) && !['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role)) ? { branch_id: req.user?.branch_ids?.[0] ?? req.user?.branch_id ?? req.body.branch_id } : {};
   const tenantBody={...req.body,...autoBranch,...(['branches','departments'].includes(master)?{company_id:req.user!.company_id}:{})};
   const preview=cfg.schema.safeParse({...tenantBody,...(prefix&&cfg.columns.includes('code')?{code:`${prefix}-00000`}:{})});
   if(!preview.success){res.status(422).json({message:preview.error.issues[0]?.message,errors:preview.error.flatten().fieldErrors});return}
