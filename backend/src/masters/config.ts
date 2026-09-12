@@ -6,7 +6,7 @@ const status = z.enum(['active', 'inactive']).default('active');
 const id = z.coerce.number().int().positive();
 const email = z.union([z.string().trim().email(), z.literal(''), z.null()]).optional().transform((v) => v || null);
 const amount = z.coerce.number().min(0).default(0);
-const optionalYear = z.preprocess(v=>v===''||v===null||v===undefined?null:v,z.coerce.number().int().min(1900).max(2100).nullable()).optional();
+const optionalYear = z.preprocess(v=>v===''||v===null||v===undefined?null:v,z.coerce.number().int().min(0).max(2100).nullable()).optional();
 const optionalPattern = (pattern: RegExp, message: string, max: number) => z.union([
   z.string().trim().max(max).regex(pattern, message), z.literal(''), z.null(),
 ]).optional().transform((v) => v || null);
@@ -93,7 +93,7 @@ const configs = {
     search: ['m.code','m.name','m.contact_person','m.mobile','m.gstin'], select: 'm.*', orderBy: 'm.name',
   },
   vehicles: {
-    table: 'vehicles', schema: z.object({ branch_id: id, vehicle_number: requiredText('Vehicle number',14).regex(/^[A-Z]{2}\s\d{1,2}\s[A-Z]{1,3}\s\d{1,4}$/i,'Enter a valid vehicle number like TN 00 CM 0000'), customer_id: id.nullish(),
+    table: 'vehicles', schema: z.object({ branch_id: id, vehicle_number: requiredText('Vehicle number',14).regex(/^[A-Z]{2}\s\d{2}\s[A-Z]{2}\s\d{1,4}$/i,'Enter a valid vehicle number like TN 31 CM 0000'), customer_id: id,
       vehicle_name: optionalText, model: optionalText, manufacturing_year: optionalYear,
       fuel_type: optionalText, engine_number: optionalText, chassis_number: optionalText, sale_date: optionalText, status }),
     columns: ['branch_id','vehicle_number','customer_id','vehicle_name','model','manufacturing_year','fuel_type','engine_number','chassis_number','sale_date','status'],

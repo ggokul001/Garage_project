@@ -24,7 +24,7 @@ export function validationProps(format?: InputFormat) {
   if (format === 'gstin') return { maxLength: 15, minLength: 15, pattern: '[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]', title: 'Enter a valid 15-character GSTIN' };
   if (format === 'pan') return { maxLength: 10, minLength: 10, pattern: '[A-Z]{5}[0-9]{4}[A-Z]', title: 'Enter a valid PAN (example: ABCDE1234F)' };
   if (format === 'ifsc') return { maxLength: 11, minLength: 11, pattern: '[A-Z]{4}0[A-Z0-9]{6}', title: 'Enter a valid 11-character IFSC code' };
-  if (format === 'vehicle_number') return { maxLength: 14, minLength: 8, pattern: '[A-Z]{2}\\s[0-9]{1,2}\\s[A-Z]{1,3}\\s[0-9]{1,4}', title: 'Enter a valid vehicle number like TN 00 CM 0000' };
+  if (format === 'vehicle_number') return { maxLength: 14, minLength: 11, pattern: '[A-Z]{2}\\s[0-9]{2}\\s[A-Z]{2}\\s[0-9]{1,4}', title: 'Enter a valid vehicle number like TN 31 CM 0000' };
   if (format === 'integer') return { inputMode: 'numeric' as const, pattern: '[0-9]*', title: 'Enter numbers only' };
   if (format === 'decimal') return { inputMode: 'decimal' as const, pattern: '[0-9]+([.][0-9]{1,2})?', title: 'Enter a valid non-negative number' };
   return {};
