@@ -1196,6 +1196,11 @@ UPDATE payroll_details d JOIN payroll_runs h ON h.id=d.payroll_run_id SET d.comp
 UPDATE master_code_sequences SET company_id=@default_company_id WHERE company_id IS NULL;
 UPDATE help_desk_tickets d JOIN users u ON u.id=d.user_id SET d.company_id=u.company_id WHERE d.company_id IS NULL;
 UPDATE audit_logs d JOIN users u ON u.id=d.user_id SET d.company_id=u.company_id WHERE d.company_id IS NULL;
+UPDATE audit_logs a JOIN job_cards j ON a.entity_type='job-cards' AND a.record_id=CAST(j.id AS CHAR) SET a.branch_id=j.branch_id WHERE a.branch_id IS NULL;
+UPDATE audit_logs a JOIN work_orders w ON a.entity_type='work-orders' AND a.record_id=CAST(w.id AS CHAR) JOIN job_cards j ON j.id=w.job_card_id SET a.branch_id=j.branch_id WHERE a.branch_id IS NULL;
+UPDATE audit_logs a JOIN salary_advances s ON a.entity_type='salary-advances' AND a.record_id=CAST(s.id AS CHAR) JOIN employees e ON e.id=s.employee_id SET a.branch_id=e.branch_id WHERE a.branch_id IS NULL;
+UPDATE audit_logs a JOIN payroll_runs p ON a.entity_type='payroll' AND a.record_id=CAST(p.id AS CHAR) SET a.branch_id=p.branch_id WHERE a.branch_id IS NULL;
+UPDATE audit_logs a JOIN users u ON u.id=a.user_id SET a.branch_id=u.branch_id WHERE a.branch_id IS NULL;
 
 INSERT IGNORE INTO permissions(code,name,module,action) VALUES
 ('AUDIT_VIEW','View Audit Report','Reports','view'),

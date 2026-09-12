@@ -76,6 +76,21 @@ async function auditCompanyId(entity:string,parts:string[],recordId:string,body:
   return null;
 }
 
+async function auditBranchId(entity:string,parts:string[],recordId:string,body:Record<string,unknown>,before:Record<string,unknown>|undefined,actorBranch:number|null){
+  const direct=Number(body.branch_id??before?.branch_id);
+  if(Number.isFinite(direct)&&direct>0)return direct;
+  const numeric=Number(recordId||[...parts].reverse().find(value=>/^\d+$/.test(value)));
+  if(!numeric)return actorBranch;
+  if(entity==='job-cards'){const rows=await query<RowDataPacket&{branch_id:number}>('SELECT branch_id FROM job_cards WHERE id=?',[numeric]);return rows[0]?.branch_id??actorBranch}
+  if(entity==='work-orders'){const rows=await query<RowDataPacket&{branch_id:number}>('SELECT j.branch_id FROM work_orders w JOIN job_cards j ON j.id=w.job_card_id WHERE w.id=?',[numeric]);return rows[0]?.branch_id??actorBranch}
+  if(entity==='accounts'){const rows=await query<RowDataPacket&{branch_id:number}>('SELECT j.branch_id FROM job_cards j WHERE j.id=?',[numeric]);return rows[0]?.branch_id??actorBranch}
+  if(entity==='salary-advances'){const rows=await query<RowDataPacket&{branch_id:number}>('SELECT e.branch_id FROM salary_advances a JOIN employees e ON e.id=a.employee_id WHERE a.id=?',[numeric]);return rows[0]?.branch_id??actorBranch}
+  if(entity==='attendance')return direct||actorBranch;
+  if(entity==='payroll'){const rows=await query<RowDataPacket&{branch_id:number}>('SELECT branch_id FROM payroll_runs WHERE id=?',[numeric]);return rows[0]?.branch_id??actorBranch}
+  if(['employees','customers','vehicles'].includes(entity)){const table=entity;const rows=await query<RowDataPacket&{branch_id:number}>(`SELECT branch_id FROM ${table} WHERE id=?`,[numeric]);return rows[0]?.branch_id??actorBranch}
+  return actorBranch;
+}
+
 export async function auditMiddleware(req:Request,res:Response,next:NextFunction){
   if(!['POST','PUT','PATCH','DELETE'].includes(req.method)||req.path.includes('/auth/'))return next();
   const initial=context(req.originalUrl.split('?')[0],req.method),requestBody=normalizedBody(req.body);
@@ -95,12 +110,13 @@ export async function auditMiddleware(req:Request,res:Response,next:NextFunction
       let submitted:unknown=action==='CREATE'&&data&&typeof data==='object'?{...body,...data}:body;
       if(action!=='CREATE'&&req.method!=='DELETE'){const after=await beforeSnapshot(entity,parts,body);if(after.snapshot)submitted={...after.snapshot,...body}}
       const companyId=actor.company_id??await auditCompanyId(entity,parts,recordId,body);
-      await execute('INSERT INTO audit_logs(company_id,module_name,entity_type,record_id,record_display_name,action,route,old_values,new_values,user_id,ip_address,user_agent) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',[
-        companyId,module,entity,recordId||null,String(res.locals.auditBefore?.name??res.locals.auditBefore?.payment_no??displayName(body,responseBody,recordId||entity)),action,req.originalUrl,
+      const branchId=await auditBranchId(entity,parts,recordId,body,res.locals.auditBefore,actor.branch_id);
+      await execute('INSERT INTO audit_logs(company_id,branch_id,module_name,entity_type,record_id,record_display_name,action,route,old_values,new_values,user_id,ip_address,user_agent) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',[
+        companyId,branchId,module,entity,recordId||null,String(res.locals.auditBefore?.name??res.locals.auditBefore?.payment_no??displayName(body,responseBody,recordId||entity)),action,req.originalUrl,
         res.locals.auditBefore?JSON.stringify(safeValue(res.locals.auditBefore)):null,
         req.method==='DELETE'?null:JSON.stringify(safeValue(submitted)),actor.id,req.ip??null,String(req.headers['user-agent']??'').slice(0,500)||null,
       ]);
-      if(entity==='job-cards'&&action==='APPROVE'&&data?.id&&data?.work_order_no)await execute('INSERT INTO audit_logs(company_id,module_name,entity_type,record_id,record_display_name,action,route,new_values,user_id,ip_address,user_agent) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[actor.company_id,'Work Orders','work-orders',String(data.id),String(data.work_order_no),'CREATE',req.originalUrl,JSON.stringify(safeValue(data)),actor.id,req.ip??null,String(req.headers['user-agent']??'').slice(0,500)||null]);
+      if(entity==='job-cards'&&action==='APPROVE'&&data?.id&&data?.work_order_no)await execute('INSERT INTO audit_logs(company_id,branch_id,module_name,entity_type,record_id,record_display_name,action,route,new_values,user_id,ip_address,user_agent) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',[actor.company_id,branchId,'Work Orders','work-orders',String(data.id),String(data.work_order_no),'CREATE',req.originalUrl,JSON.stringify(safeValue(data)),actor.id,req.ip??null,String(req.headers['user-agent']??'').slice(0,500)||null]);
     }catch(error){console.error('Audit log failed',error)}})();
   });
   next();
