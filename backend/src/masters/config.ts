@@ -82,8 +82,8 @@ const configs = {
     orderBy: 'm.first_name',
   },
   customers: {
-    table: 'customers', schema: z.object({ ...partyFields, credit_limit: amount, credit_days: z.coerce.number().int().min(0).default(0) }),
-    columns: ['code','name','contact_person','mobile','alternate_mobile','email','gstin','pan','address_line1','address_line2','city','state','pincode','credit_limit','credit_days','remarks','status'],
+    table: 'customers', schema: z.object({ branch_id: id, ...partyFields, credit_limit: amount, credit_days: z.coerce.number().int().min(0).default(0) }),
+    columns: ['branch_id','code','name','contact_person','mobile','alternate_mobile','email','gstin','pan','address_line1','address_line2','city','state','pincode','credit_limit','credit_days','remarks','status'],
     search: ['m.code','m.name','m.contact_person','m.mobile','m.gstin'], select: 'm.*', orderBy: 'm.name',
   },
   vendors: {
@@ -93,10 +93,10 @@ const configs = {
     search: ['m.code','m.name','m.contact_person','m.mobile','m.gstin'], select: 'm.*', orderBy: 'm.name',
   },
   vehicles: {
-    table: 'vehicles', schema: z.object({ vehicle_number: requiredText('Vehicle number',30), customer_id: id.nullish(),
+    table: 'vehicles', schema: z.object({ branch_id: id, vehicle_number: requiredText('Vehicle number',14).regex(/^[A-Z]{2}\s\d{1,2}\s[A-Z]{1,3}\s\d{1,4}$/i,'Enter a valid vehicle number like TN 00 CM 0000'), customer_id: id.nullish(),
       vehicle_name: optionalText, model: optionalText, manufacturing_year: optionalYear,
       fuel_type: optionalText, engine_number: optionalText, chassis_number: optionalText, sale_date: optionalText, status }),
-    columns: ['vehicle_number','customer_id','vehicle_name','model','manufacturing_year','fuel_type','engine_number','chassis_number','sale_date','status'],
+    columns: ['branch_id','vehicle_number','customer_id','vehicle_name','model','manufacturing_year','fuel_type','engine_number','chassis_number','sale_date','status'],
     search: ['m.vehicle_number','m.vehicle_name','m.model','m.engine_number','m.chassis_number','c.name'], select: 'm.*, c.name AS customer_name, c.mobile AS customer_mobile',
     joins: 'LEFT JOIN customers c ON c.id=m.customer_id', orderBy: 'm.vehicle_number',
   },

@@ -29,6 +29,12 @@ const requireMasterAction = (action:'VIEW'|'CREATE'|'UPDATE'|'DELETE') => (req:R
 };
 
 router.use(authenticate);
+const branchScopedMasters = new Set<MasterName>(['employees','customers','vehicles']);
+const branchScope = (req: Request, master: MasterName, alias = 'm') => {
+  if (!branchScopedMasters.has(master) || ['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role))) return { sql: '', params: [] as number[] };
+  const ids = req.user?.branch_ids ?? [];
+  return ids.length ? { sql: ` AND ${alias}.branch_id IN (${ids.map(() => '?').join(',')})`, params: ids } : { sql: ' AND 1=0', params: [] as number[] };
+};
 
 const companyLogoUpload=multer({storage:companyStorage('company-profile',req=>Number(req.user?.company_id)),limits:{fileSize:env.maxUploadSizeMb*1024*1024,files:1},fileFilter:(_req,file,callback)=>['image/jpeg','image/png','image/webp'].includes(file.mimetype)?callback(null,true):callback(new Error('Company logo must be JPG, PNG or WEBP'))}).single('logo');
 async function companyBranding(companyId:number){
@@ -49,8 +55,9 @@ router.param('master', (req, res, next, value) => {
 router.get('/:master/options', requireMasterAction('VIEW'), asyncRoute(async (req, res) => {
   const master=req.params.master as MasterName,cfg: MasterConfig = masterConfigs[master];
   if(master==='companies'){res.json({data:req.user!.company_id?await query('SELECT * FROM companies WHERE id=?',[req.user!.company_id]):[]});return}
+  const scope=branchScope(req,master);
   const rows = await query<RowDataPacket & Record<string, unknown>>(
-    `SELECT ${cfg.select} FROM ${cfg.table} m ${cfg.joins ?? ''} WHERE m.company_id=? AND m.status='active' ORDER BY ${cfg.orderBy ?? 'm.id'} LIMIT 1000`,[req.user!.company_id]
+    `SELECT ${cfg.select} FROM ${cfg.table} m ${cfg.joins ?? ''} WHERE m.company_id=?${scope.sql} AND m.status='active' ORDER BY ${cfg.orderBy ?? 'm.id'} LIMIT 1000`,[req.user!.company_id,...scope.params]
   );
   res.json({ data: rows });
 }));
@@ -61,7 +68,7 @@ router.get('/:master', requireMasterAction('VIEW'), asyncRoute(async (req, res) 
   const page = Math.max(1, Number(req.query.page) || 1);
   const pageSize = Math.min(100, Math.max(5, Number(req.query.pageSize) || 15));
   const search = String(req.query.search ?? '').trim();
-  const clauses:string[]=[];const params:unknown[]=[];if(tenantMaster(master)){clauses.push('m.company_id=?');params.push(req.user!.company_id)}
+  const clauses:string[]=[];const params:unknown[]=[];if(tenantMaster(master)){clauses.push('m.company_id=?');params.push(req.user!.company_id);const scope=branchScope(req,master);if(scope.sql)clauses.push(scope.sql.replace(/^ AND /,''));params.push(...scope.params)}
   if(search){clauses.push(`(${cfg.search.map((column) => `${column} LIKE ?`).join(' OR ')})`);params.push(...cfg.search.map(() => `%${search}%`))}
   const where=clauses.length?`WHERE ${clauses.join(' AND ')}`:'';
   const count = await query<RowDataPacket & { total: number }>(
@@ -78,8 +85,9 @@ router.get('/:master', requireMasterAction('VIEW'), asyncRoute(async (req, res) 
 router.get('/:master/:id', requireMasterAction('VIEW'), asyncRoute(async (req, res) => {
   const master=req.params.master as MasterName,cfg: MasterConfig = masterConfigs[master];
   if(master==='companies'&&!req.user!.is_super_admin&&Number(req.params.id)!==req.user!.company_id){res.status(404).json({message:'Record not found'});return}
+  const scope=branchScope(req,master);
   const rows = await query<RowDataPacket & Record<string, unknown>>(
-    `SELECT ${cfg.select} FROM ${cfg.table} m ${cfg.joins ?? ''} WHERE m.id=? ${tenantMaster(master)?'AND m.company_id=?':''}`, tenantMaster(master)?[req.params.id,req.user!.company_id]:[req.params.id]
+    `SELECT ${cfg.select} FROM ${cfg.table} m ${cfg.joins ?? ''} WHERE m.id=? ${tenantMaster(master)?'AND m.company_id=?':''}${scope.sql}`, tenantMaster(master)?[req.params.id,req.user!.company_id,...scope.params]:[req.params.id]
   );
   if (!rows[0]) { res.status(404).json({ message: 'Record not found' }); return; }
   res.json({ data: rows[0] });
@@ -90,7 +98,8 @@ router.post('/:master', requireMasterAction('CREATE'), asyncRoute(async (req, re
   if(master==='companies'){res.status(403).json({message:'Use Super Administrator company management'});return}
   if(master==='branches'){const limits=await query<RowDataPacket&{max_branches:number|null;used:number}>('SELECT c.max_branches,(SELECT COUNT(*) FROM branches WHERE company_id=c.id) used FROM companies c WHERE c.id=?',[req.user!.company_id]);if(limits[0]?.max_branches&&Number(limits[0].used)>=Number(limits[0].max_branches)){res.status(409).json({message:'Company branch limit reached'});return}}
   const prefix=codePrefix[master];
-  const tenantBody={...req.body,...(['branches','departments'].includes(master)?{company_id:req.user!.company_id}:{})};
+  const autoBranch = branchScopedMasters.has(master) && !['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role)) ? { branch_id: req.user?.branch_ids?.length === 1 ? req.user.branch_ids[0] : req.body.branch_id } : {};
+  const tenantBody={...req.body,...autoBranch,...(['branches','departments'].includes(master)?{company_id:req.user!.company_id}:{})};
   const preview=cfg.schema.safeParse({...tenantBody,...(prefix&&cfg.columns.includes('code')?{code:`${prefix}-00000`}:{})});
   if(!preview.success){res.status(422).json({message:preview.error.issues[0]?.message,errors:preview.error.flatten().fieldErrors});return}
   const created:any=await withTransaction(async connection=>{
@@ -131,10 +140,10 @@ router.put('/:master/:id', requireMasterAction('UPDATE'), asyncRoute(async (req,
     await execute(`UPDATE companies SET ${profileColumns.map(column=>`${column}=?`).join(',')} WHERE id=?`,[...profileColumns.map(column=>d[column]??null),req.user!.company_id]);
     res.json({message:'Company profile updated successfully'});return;
   }
-  const before=await query<RowDataPacket&Record<string,unknown>>(`SELECT m.* FROM ${cfg.table} m WHERE m.id=? AND m.company_id=?`,[req.params.id,req.user!.company_id]);
+  const scope=branchScope(req,master); const before=await query<RowDataPacket&Record<string,unknown>>(`SELECT m.* FROM ${cfg.table} m WHERE m.id=? AND m.company_id=?${scope.sql}`,[req.params.id,req.user!.company_id,...scope.params]);
   if(!before[0]){res.status(404).json({message:'Record not found'});return}
   res.locals.auditBefore=before[0];
-  const parsed = cfg.schema.safeParse({...req.body,...(['branches','departments'].includes(master)?{company_id:req.user!.company_id}:{}),...(cfg.columns.includes('code')?{code:before[0].code}:{})});
+  const parsed = cfg.schema.safeParse({...req.body,...(branchScopedMasters.has(master)&&!['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role))?{branch_id:before[0].branch_id}:{ }),...(['branches','departments'].includes(master)?{company_id:req.user!.company_id}:{}),...(cfg.columns.includes('code')?{code:before[0].code}:{})});
   if (!parsed.success) { res.status(422).json({ message: parsed.error.issues[0]?.message, errors: parsed.error.flatten().fieldErrors }); return; }
   const data = parsed.data as Record<string, unknown>;
   await validateLinks(master,data,Number(req.user!.company_id));
@@ -148,9 +157,9 @@ router.put('/:master/:id', requireMasterAction('UPDATE'), asyncRoute(async (req,
 router.delete('/:master/:id', requireMasterAction('DELETE'), asyncRoute(async (req, res) => {
   const master=req.params.master as MasterName,cfg: MasterConfig = masterConfigs[master];
   if(master==='companies'){res.status(403).json({message:'Use Super Administrator company management'});return}
-  const before=await query<RowDataPacket&Record<string,unknown>>(`SELECT m.* FROM ${cfg.table} m WHERE m.id=? AND m.company_id=?`,[req.params.id,req.user!.company_id]);
+  const scope=branchScope(req,master); const before=await query<RowDataPacket&Record<string,unknown>>(`SELECT m.* FROM ${cfg.table} m WHERE m.id=? AND m.company_id=?${scope.sql}`,[req.params.id,req.user!.company_id,...scope.params]);
   if(before[0])res.locals.auditBefore=before[0];
-  const result = await execute(`DELETE FROM ${cfg.table} WHERE id=? AND company_id=?`, [req.params.id,req.user!.company_id]);
+  const result = await execute(`DELETE FROM ${cfg.table} WHERE id=? AND company_id=?${scope.sql}`, [req.params.id,req.user!.company_id,...scope.params]);
   if (!result.affectedRows) { res.status(404).json({ message: 'Record not found' }); return; }
   res.json({ message: 'Deleted successfully' });
 }));

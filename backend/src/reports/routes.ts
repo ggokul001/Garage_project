@@ -4,6 +4,7 @@ import { authenticate, requirePermission } from '../middleware/auth';
 import { query } from '../config/db';
 const router = Router();
 router.use(authenticate);
+router.use((req,res,next)=>{const raw=req.query.branch_id; if(raw!==undefined&&raw!==''){const branchId=Number(raw);if(!['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role))&&!(req.user?.branch_ids??[]).includes(branchId))return res.status(403).json({message:'You do not have access to this branch'});} next();});
 const asyncRoute = (fn: (req: Request, res: Response) => Promise<void>) => (req: Request, res: Response, next: NextFunction) => fn(req, res).catch(next);
 router.get('/reports/audit/options', requirePermission('AUDIT_VIEW'), asyncRoute(async (req, res) => {
     const modules = await query<RowDataPacket & {
@@ -15,6 +16,11 @@ router.get('/reports/audit/options', requirePermission('AUDIT_VIEW'), asyncRoute
 router.get('/reports/audit', requirePermission('AUDIT_VIEW'), asyncRoute(async (req, res) => {
     const page = Math.max(1, Number(req.query.page) || 1), pageSize = Math.min(100, Math.max(10, Number(req.query.pageSize) || 25));
     const clauses: string[] = ['a.company_id=?'], params: unknown[] = [req.user!.company_id];
+    if (!['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role))) {
+        const ids = req.user?.branch_ids ?? [];
+        clauses.push(ids.length ? `(a.branch_id IN (${ids.map(() => '?').join(',')}) OR u.branch_id IN (${ids.map(() => '?').join(',')}))` : '1=0');
+        params.push(...ids,...ids);
+    }
     const add = (sql: string, value: unknown) => { clauses.push(sql); params.push(value); };
     if (req.query.module)
         add('a.module_name=?', String(req.query.module));
@@ -44,7 +50,9 @@ router.get('/audit/timeline', requirePermission('AUDIT_VIEW'), asyncRoute(async 
         res.status(422).json({ message: 'Entity type and record ID are required' });
         return;
     }
-    const rows = await query<RowDataPacket & Record<string, unknown>>(`SELECT a.*,u.full_name user_name,u.username FROM audit_logs a JOIN users u ON u.id=a.user_id WHERE a.company_id=? AND a.entity_type=? AND (a.record_id=? ${displayName ? 'OR a.record_display_name=?' : ''}) ORDER BY a.id DESC LIMIT 200`, displayName ? [req.user!.company_id,entity, recordId, displayName] : [req.user!.company_id,entity, recordId]);
+    const ids=req.user?.branch_ids??[], scope=!['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role))?(ids.length?` AND (a.branch_id IN (${ids.map(()=>'?').join(',')}) OR u.branch_id IN (${ids.map(()=>'?').join(',')}))`:' AND 1=0'):'';
+    const args=displayName ? [req.user!.company_id,entity,recordId,displayName,...ids,...ids] : [req.user!.company_id,entity,recordId,...ids,...ids];
+    const rows = await query<RowDataPacket & Record<string, unknown>>(`SELECT a.*,u.full_name user_name,u.username FROM audit_logs a JOIN users u ON u.id=a.user_id WHERE a.company_id=? AND a.entity_type=? AND (a.record_id=? ${displayName ? 'OR a.record_display_name=?' : ''})${scope} ORDER BY a.id DESC LIMIT 200`, args);
     res.json({ data: rows });
 }));
 type ReportDefinition = {
@@ -68,11 +76,13 @@ const reports: Record<string, ReportDefinition> = {
     'store-spares': { label: 'Store Spare Details', date: 's.entry_date', fy: 's.financial_year_id', status: 's.store_type', vendor: 's.vendor_id', search: ['s.store_no', 's.bill_no', 'v.name', 'd.product_code', 'd.product_name'], order: 's.entry_date DESC,s.id DESC,d.sort_order', sql: `SELECT s.store_no,s.entry_date,s.store_type,s.bill_no,v.name vendor_name,d.product_code,d.product_name,d.part_number,d.hsn_code,d.quantity,d.rate,d.gst_percent,d.discount_percent,d.taxable_amount,d.gst_amount,d.total_amount FROM store_entry_details d JOIN store_entries s ON s.id=d.store_entry_id JOIN vendors v ON v.id=s.vendor_id` },
     'vendor-payments': { label: 'Vendor Payments', date: 'p.payment_date', fy: 'p.financial_year_id', vendor: 'p.vendor_id', search: ['p.payment_no', 'v.name', 's.store_no', 's.bill_no'], order: 'p.payment_date DESC,p.id DESC', sql: `SELECT p.payment_no,p.payment_date,v.code vendor_code,v.name vendor_name,s.store_no,s.bill_no,s.entry_date bill_date,s.net_amount bill_amount,a.amount allocated_amount,p.total_amount payment_total,p.remarks,u.full_name paid_by FROM vendor_payment_allocations a JOIN vendor_payments p ON p.id=a.vendor_payment_id JOIN vendors v ON v.id=p.vendor_id JOIN store_entries s ON s.id=a.store_entry_id JOIN users u ON u.id=p.created_by` },
     'attendance': { label: 'Daily Attendance', date: 'a.attendance_date', fy: 'a.financial_year_id', branch: 'a.branch_id', status: 'a.attendance_type', search: ['e.code', 'e.first_name', 'e.last_name', 'd.name'], order: 'a.attendance_date DESC,e.first_name', sql: `SELECT a.attendance_date,b.name branch_name,e.code employee_code,CONCAT_WS(' ',e.first_name,e.last_name) employee_name,d.name department_name,g.name designation_name,s.name shift_name,asf.name additional_shift,a.attendance_type,a.in_time,a.out_time,a.permission_hours,a.ot_hours,a.source,a.remarks FROM daily_attendance a JOIN branches b ON b.id=a.branch_id JOIN employees e ON e.id=a.employee_id LEFT JOIN departments d ON d.id=e.department_id LEFT JOIN designations g ON g.id=e.designation_id LEFT JOIN shifts s ON s.id=a.shift_id LEFT JOIN shifts asf ON asf.id=a.additional_shift_id` },
-    'salary-advances': { label: 'Salary Advances', date: 'sa.advance_date', fy: 'sa.financial_year_id', status: 'sa.status', search: ['sa.advance_no', 'e.code', 'e.first_name', 'e.last_name'], order: 'sa.advance_date DESC,sa.id DESC', sql: `SELECT sa.advance_no,sa.advance_date,e.code employee_code,CONCAT_WS(' ',e.first_name,e.last_name) employee_name,d.name department_name,sa.amount,sa.recovery_month,sa.status,sa.remarks FROM salary_advances sa JOIN employees e ON e.id=sa.employee_id LEFT JOIN departments d ON d.id=e.department_id` },
+    'salary-advances': { label: 'Salary Advances', date: 'sa.advance_date', fy: 'sa.financial_year_id', branch: 'e.branch_id', status: 'sa.status', search: ['sa.advance_no', 'e.code', 'e.first_name', 'e.last_name'], order: 'sa.advance_date DESC,sa.id DESC', sql: `SELECT sa.advance_no,sa.advance_date,b.name branch_name,e.code employee_code,CONCAT_WS(' ',e.first_name,e.last_name) employee_name,d.name department_name,sa.amount,sa.recovery_month,sa.status,sa.remarks FROM salary_advances sa JOIN employees e ON e.id=sa.employee_id JOIN branches b ON b.id=e.branch_id LEFT JOIN departments d ON d.id=e.department_id` },
     'payroll': { label: 'Payroll', date: 'STR_TO_DATE(CONCAT(r.salary_month,"-01"),"%Y-%m-%d")', fy: 'r.financial_year_id', branch: 'r.branch_id', status: 'r.status', search: ['e.code', 'e.first_name', 'e.last_name', 'd.name'], order: 'r.salary_month DESC,e.first_name', sql: `SELECT r.salary_month,b.name branch_name,r.status payroll_status,e.code employee_code,CONCAT_WS(' ',e.first_name,e.last_name) employee_name,d.name department_name,p.month_days,p.present_days,p.permission_days,p.half_days,p.leave_days,p.absent_days,p.payable_days,p.ot_hours,p.monthly_salary,p.earned_salary,p.ot_amount,p.advance_deduction,p.other_earnings,p.other_deductions,p.net_salary FROM payroll_details p JOIN payroll_runs r ON r.id=p.payroll_run_id JOIN branches b ON b.id=r.branch_id JOIN employees e ON e.id=p.employee_id LEFT JOIN departments d ON d.id=e.department_id` },
 };
 router.get('/reports/entries/options', requirePermission('ENTRY_REPORT_VIEW'), asyncRoute(async (req, res) => {
-    const branches = await query<RowDataPacket & Record<string, unknown>>("SELECT id,name FROM branches WHERE company_id=? AND status='active' ORDER BY name",[req.user!.company_id]);
+    const unrestricted=['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role)),ids=req.user?.branch_ids??[];
+    const branchWhere=unrestricted?'':ids.length?` AND id IN (${ids.map(()=>'?').join(',')})`:' AND 1=0';
+    const branches = await query<RowDataPacket & Record<string, unknown>>(`SELECT id,name FROM branches WHERE company_id=? AND status='active'${branchWhere} ORDER BY name`,unrestricted?[req.user!.company_id]:[req.user!.company_id,...ids]);
     const vendors = await query<RowDataPacket & Record<string, unknown>>("SELECT id,name,code FROM vendors WHERE company_id=? AND status='active' ORDER BY name",[req.user!.company_id]);
     res.json({ data: { reports: Object.entries(reports).map(([key, value]) => ({ key, label: value.label })), branches, vendors } });
 }));
@@ -85,6 +95,7 @@ router.get('/reports/entries/:type', requirePermission('ENTRY_REPORT_VIEW'), asy
     const tenantAliases:Record<string,string>={'job-cards':'j','work-orders':'w','work-order-complaints':'w','accounts':'j','customer-receipts':'p','stores':'s','store-spares':'s','vendor-payments':'p','attendance':'a','salary-advances':'sa','payroll':'r'};
     const clauses: string[] = [`${tenantAliases[req.params.type]}.company_id=?`];
     const params: unknown[] = [req.user!.company_id];
+    if(def.branch && !['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role))){const ids=req.user?.branch_ids??[];clauses.push(ids.length?`${def.branch} IN (${ids.map(()=>'?').join(',')})`:'1=0');params.push(...ids);}
     if (req.params.type === 'job-cards' || req.params.type === 'accounts')
         clauses.push('j.deleted_at IS NULL');
     if (req.params.type.startsWith('work-order'))

@@ -22,7 +22,7 @@ export function SalaryAdvancePage(){
   const list=useQuery({queryKey:['salary-advances',fy,page,pageSize,search],queryFn:()=>payrollApi.advances({financial_year_id:fy,page,pageSize,search}),enabled:!!fy});
   const create=useMutation({mutationFn:()=>payrollApi.createAdvance({...form,financial_year_id:fy}),onSuccess:r=>{toast.success(r.message);setOpen(false);qc.invalidateQueries({queryKey:['salary-advances']})},onError:(e:Error)=>toast.error(e.message)});
   const remove=useMutation({mutationFn:payrollApi.deleteAdvance,onSuccess:r=>{toast.success(r.message);qc.invalidateQueries({queryKey:['salary-advances']})},onError:(e:Error)=>toast.error(e.message)});
-  const submit=(e:FormEvent)=>{e.preventDefault();if(!form.employee_id)return toast.error('Select employee');create.mutate()};
+  const submit=(e:FormEvent)=>{e.preventDefault();if(!form.employee_id)return toast.error('Select employee');if(Number(form.amount)<=0)return toast.error('Advance amount must be greater than 0');if(!form.advance_date)return toast.error('Select advance date');if(!form.recovery_month)return toast.error('Select recovery month');create.mutate()};
   const newAdvance=()=>{setEmployee('');setForm({advance_date:today(),employee_id:null,amount:0,recovery_month:month(),remarks:''});setOpen(true)};
   return <div>
     <PageTitle title="Salary Advance" subtitle="Simple employee advance and monthly recovery" icon={HandCoins} action={has('SALARY_ADVANCE_CREATE')?<button className="btn-primary" onClick={newAdvance}><Plus size={15}/>New Advance</button>:undefined}/>
@@ -36,8 +36,8 @@ export function SalaryAdvancePage(){
       <form id="advance-form" onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
         <div><label className="label">Advance Date *</label><input className="input" type="date" value={form.advance_date} onChange={e=>setForm({...form,advance_date:e.target.value})}/></div>
         <div><label className="label">Recovery Month *</label><input className="input" type="month" value={form.recovery_month} onChange={e=>setForm({...form,recovery_month:e.target.value})}/></div>
-        <div className="sm:col-span-2"><Autocomplete label="Employee" required value={employee} onChange={setEmployee} onSelect={(row:RecordData|null)=>setForm({...form,employee_id:row?.id??null})} fetchOptions={s=>transactionApi.autocomplete('employees',s)} renderOption={row=><span><strong>{String(row.full_name)}</strong> · {String(row.code)}</span>}/></div>
-        <div><label className="label">Advance Amount *</label><input className="input" type="number" value={form.amount} onChange={e=>setForm({...form,amount:Number(e.target.value)})}/></div>
+        <div className="sm:col-span-2"><Autocomplete label="Employee" required value={employee} onChange={value=>{setEmployee(value);setForm({...form,employee_id:null})}} onSelect={(row:RecordData|null)=>setForm({...form,employee_id:row?.id??null})} fetchOptions={s=>transactionApi.autocomplete('employees',s)} renderOption={row=><span><strong>{String(row.full_name)}</strong> · {String(row.code)}</span>}/></div>
+        <div><label className="label">Advance Amount *</label><input className="input" type="number" min="0.01" step="0.01" value={form.amount} onChange={e=>setForm({...form,amount:Number(e.target.value)})}/></div>
         <div><label className="label">Remarks</label><input className="input" value={form.remarks} onChange={e=>setForm({...form,remarks:e.target.value})}/></div>
       </form>
     </Modal>

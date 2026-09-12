@@ -33,8 +33,8 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     const token = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : '';
     if (!token) return res.status(401).json({ message: 'Authentication required' });
     const payload = jwt.verify(token, env.jwtSecret) as unknown as TokenPayload;
-    const users = await query<RowDataPacket & { id:number; username:string; role_code:string; status:string; company_id:number|null; company_status:string|null; account_type:string|null; trial_ends_at:string|null }>(
-      `SELECT u.id,u.username,u.status,u.company_id,r.code role_code,c.status company_status,c.account_type,c.trial_ends_at
+    const users = await query<RowDataPacket & { id:number; username:string; role_code:string; status:string; company_id:number|null; branch_id:number|null; company_status:string|null; account_type:string|null; trial_ends_at:string|null }>(
+      `SELECT u.id,u.username,u.status,u.company_id,u.branch_id,r.code role_code,c.status company_status,c.account_type,c.trial_ends_at
        FROM users u JOIN roles r ON r.id=u.role_id LEFT JOIN companies c ON c.id=u.company_id WHERE u.id=?`, [payload.sub]
     );
     if (!users[0] || users[0].status !== 'active') return res.status(401).json({ message: 'Session is no longer active' });
@@ -46,7 +46,10 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       if(trialExpired)return res.status(403).json({code:'TRIAL_EXPIRED',message:'Your trial period has expired. Please contact the administrator to activate your account.',details:{trial_ends_at:user.trial_ends_at}});
       if(user.company_status!=='active')return res.status(403).json({code:'COMPANY_INACTIVE',message:'Your company account is inactive. Please contact the administrator.'});
     }
-    req.user = { id: user.id, username: user.username, role: user.role_code, permissions: await getPermissions(user.id), company_id:user.company_id, is_super_admin:isSuperAdmin };
+    const branchRows=isSuperAdmin||['ADMIN'].includes(user.role_code)?[]:await query<RowDataPacket & {branch_id:number}>('SELECT branch_id FROM user_branch_access WHERE user_id=? AND company_id=?',[user.id,user.company_id]);
+    const branchIds=branchRows.map(row=>Number(row.branch_id));
+    if(!branchIds.length&&!isSuperAdmin&&!['ADMIN'].includes(user.role_code)&&user.branch_id)branchIds.push(Number(user.branch_id));
+    req.user = { id: user.id, username: user.username, role: user.role_code, permissions: await getPermissions(user.id), company_id:user.company_id, branch_id:user.branch_id??null, branch_ids:branchIds, is_super_admin:isSuperAdmin };
     next();
   } catch { return res.status(401).json({ message: 'Invalid or expired session' }); }
 }

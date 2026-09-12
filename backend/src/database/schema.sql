@@ -857,9 +857,11 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER
 ALTER TABLE designations ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS branch_id BIGINT UNSIGNED NULL AFTER company_id;
 ALTER TABLE vendors ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
 ALTER TABLE financial_years ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
 ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS branch_id BIGINT UNSIGNED NULL AFTER company_id;
 ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS vehicle_name VARCHAR(120) NULL AFTER customer_id;
 ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS manufacturing_year SMALLINT UNSIGNED NULL AFTER model;
 ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS fuel_type VARCHAR(30) NULL AFTER manufacturing_year;
@@ -967,6 +969,7 @@ CREATE TABLE IF NOT EXISTS help_desk_attachments (
   CONSTRAINT fk_helpdesk_attachment_user FOREIGN KEY(uploaded_by) REFERENCES users(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS branch_id BIGINT UNSIGNED NULL AFTER company_id;
 
 CREATE TABLE IF NOT EXISTS user_branch_access (
   user_id BIGINT UNSIGNED NOT NULL,
@@ -1164,6 +1167,8 @@ UPDATE users u JOIN roles r ON r.id=u.role_id SET u.company_id=NULL,u.branch_id=
 UPDATE roles SET company_id=@default_company_id WHERE company_id IS NULL AND code NOT IN ('SUPER_ADMIN','COMPANY_ADMIN','ADMIN','USER');
 UPDATE designations SET company_id=@default_company_id WHERE company_id IS NULL;
 UPDATE employees e JOIN branches b ON b.id=e.branch_id SET e.company_id=b.company_id WHERE e.company_id IS NULL;
+UPDATE customers c JOIN (SELECT customer_id, MIN(branch_id) branch_id FROM job_cards GROUP BY customer_id) j ON j.customer_id=c.id SET c.branch_id=j.branch_id WHERE c.branch_id IS NULL;
+UPDATE vehicles v JOIN (SELECT vehicle_id, MIN(branch_id) branch_id FROM job_cards GROUP BY vehicle_id) j ON j.vehicle_id=v.id SET v.branch_id=j.branch_id WHERE v.branch_id IS NULL;
 UPDATE customers SET company_id=@default_company_id WHERE company_id IS NULL;
 UPDATE vendors SET company_id=@default_company_id WHERE company_id IS NULL;
 UPDATE financial_years SET company_id=@default_company_id WHERE company_id IS NULL;

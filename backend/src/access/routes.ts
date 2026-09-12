@@ -144,7 +144,13 @@ router.get('/users',authenticate,requirePermission('USER_VIEW'),asyncRoute(async
   res.json({data:rows,meta:{page,pageSize,total:Number(count[0].total)}});
 }));
 const optionalBranchId=z.preprocess(value=>value===''||value===undefined?null:value,z.coerce.number().int().positive('Select a valid branch').nullable());
-const userSchema=z.object({username:z.string().trim().min(3),email:z.string().email(),full_name:z.string().trim().min(2),role_id:z.coerce.number().int().positive('Select a valid role'),branch_id:optionalBranchId,status:z.enum(['active','inactive']),password:z.string().min(8).optional()});
+const userSchema=z.object({username:z.string().trim().min(3),email:z.string().email(),full_name:z.string().trim().min(2),role_id:z.coerce.number().int().positive('Select a valid role'),branch_id:optionalBranchId,branch_ids:z.array(z.coerce.number().int().positive()).optional(),status:z.enum(['active','inactive']),password:z.string().min(8).optional()});
+async function syncBranchAccess(userId:number,companyId:number,branchIds?:number[],primaryBranch?:number|null){
+  const ids=[...new Set((branchIds?.length?branchIds:(primaryBranch?[primaryBranch]:[])).map(Number))];
+  if(ids.length){const valid=await query<RowDataPacket & {id:number}>('SELECT id FROM branches WHERE company_id=? AND id IN ('+ids.map(()=>'?').join(',')+')',[companyId,...ids]);if(valid.length!==ids.length)throw new Error('One or more branches do not belong to this company');}
+  await execute('DELETE FROM user_branch_access WHERE user_id=? AND company_id=?',[userId,companyId]);
+  for(const branchId of ids)await execute('INSERT INTO user_branch_access(user_id,company_id,branch_id) VALUES(?,?,?)',[userId,companyId,branchId]);
+}
 router.post('/users',authenticate,requirePermission('USER_CREATE'),asyncRoute(async(req,res)=>{
   const parsed=userSchema.extend({password:z.string().min(8)}).safeParse(req.body);if(!parsed.success){res.status(422).json({message:parsed.error.issues[0].message});return;}
   const limits=await query<RowDataPacket&{max_users:number|null;used:number}>('SELECT c.max_users,(SELECT COUNT(*) FROM users WHERE company_id=c.id) used FROM companies c WHERE c.id=?',[req.user!.company_id]);if(limits[0]?.max_users&&Number(limits[0].used)>=Number(limits[0].max_users)){res.status(409).json({message:'Company user limit reached'});return}
