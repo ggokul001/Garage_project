@@ -4,7 +4,7 @@ export type RecordData = Record<string, unknown> & { id: number; status: string 
 export type MasterSlug = 'companies'|'branches'|'departments'|'designations'|'employees'|'customers'|'vendors'|'vehicles'|'uoms'|'products'|'work-pending-sub-statuses'|'financial-years'|'shifts';
 export type ListResponse = { data: RecordData[]; meta: { page: number; pageSize: number; total: number } };
 
-const client = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL||'/api/v1', timeout: 15000 });
+const client = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL||'/api/v1', timeout: 60000 });
 client.interceptors.request.use((config) => {
   const token=localStorage.getItem('ara-garage.token');
   if(token) config.headers.Authorization=`Bearer ${token}`;
@@ -122,7 +122,7 @@ export const transactionApi={
   accounts:async(params:Record<string,unknown>)=>(await client.get('/accounts',{params})).data,
   billing:async(jobCardId:number)=>(await client.get(`/billing/${jobCardId}`)).data.data,
   receipts:async(jobCardId:number)=>(await client.get(`/accounts/${jobCardId}/receipts`)).data.data as RecordData[],
-  receivePayment:async(jobCardId:number,data:Record<string,unknown>)=>(await client.post(`/accounts/${jobCardId}/receipts`,data)).data,
+    receivePayment:async(jobCardId:number,data:Record<string,unknown>)=>(await client.post(`/accounts/${jobCardId}/receipts-fast`,data)).data,
   deleteReceipt:async(id:number)=>(await client.delete(`/accounts/receipts/${id}`)).data,
   stores:async(params:Record<string,unknown>)=>(await client.get('/stores',{params})).data,
   store:async(id:number)=>(await client.get(`/stores/${id}`)).data.data,

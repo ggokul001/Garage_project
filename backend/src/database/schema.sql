@@ -590,6 +590,8 @@ INSERT IGNORE INTO navigation_items(parent_id,title,route,icon,permission_code,s
 SELECT id,'Financial Years','/masters/financial-years','CalendarRange','FY_VIEW',12 FROM navigation_items WHERE title='Masters' AND route IS NULL;
 
 CREATE TABLE IF NOT EXISTS store_entries (
+  company_id BIGINT UNSIGNED NULL,
+  branch_id BIGINT UNSIGNED NULL,
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   financial_year_id BIGINT UNSIGNED NOT NULL,
   store_no VARCHAR(40) NOT NULL,
@@ -936,6 +938,7 @@ CREATE TABLE IF NOT EXISTS work_order_vehicle_images (
 ) ENGINE=InnoDB;
 ALTER TABLE payment_receipts ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
 ALTER TABLE store_entries ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
+ALTER TABLE store_entries ADD COLUMN IF NOT EXISTS branch_id BIGINT UNSIGNED NULL AFTER company_id;
 ALTER TABLE store_entry_details ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
 ALTER TABLE vendor_payments ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER id;
 ALTER TABLE vendor_payment_allocations ADD COLUMN IF NOT EXISTS company_id BIGINT UNSIGNED NULL AFTER vendor_payment_id;

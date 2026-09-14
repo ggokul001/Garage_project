@@ -20,19 +20,11 @@ const bundleOptions = {
   logLevel: 'info',
 };
 
-await build({
-  ...bundleOptions,
-  entryPoints: [path.join(backendDir, 'src', 'start-production.ts')],
-  outfile: path.join(distDir, 'server.js'),
-});
+await build({ ...bundleOptions, entryPoints: [path.join(backendDir, 'src', 'start-production.ts')], outfile: path.join(distDir, 'server.js') });
 // Keep both names self-contained so old and new hosting startup settings work.
 await copyFile(path.join(distDir, 'server.js'), path.join(distDir, 'start-production.js'));
 
-await build({
-  ...bundleOptions,
-  entryPoints: [path.join(backendDir, 'src', 'migrate-production.ts')],
-  outfile: path.join(distDir, 'migrate-production.js'),
-});
+await build({ ...bundleOptions, entryPoints: [path.join(backendDir, 'src', 'migrate-production.ts')], outfile: path.join(distDir, 'migrate-production.js') });
 
 await rm(productionDir, { recursive: true, force: true });
 await mkdir(path.join(productionDir, 'dist', 'database'), { recursive: true });
