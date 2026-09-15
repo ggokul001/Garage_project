@@ -29,11 +29,14 @@ const requireMasterAction = (action:'VIEW'|'CREATE'|'UPDATE'|'DELETE') => (req:R
 };
 
 router.use(authenticate);
-const branchScopedMasters = new Set<MasterName>(['employees','customers','vehicles']);
+const branchScopedMasters = new Set<MasterName>(['branches','employees','customers','vehicles']);
 const branchScope = (req: Request, master: MasterName, alias = 'm') => {
-  if (!branchScopedMasters.has(master) || ['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role))) return { sql: '', params: [] as number[] };
+  const selected = Number(req.query.branch_id) || 0;
+  const branchColumn = master === 'branches' ? `${alias}.id` : `${alias}.branch_id`;
+  if (selected && branchScopedMasters.has(master) && !['SUPER_ADMIN'].includes(String(req.user?.role)) && !(req.user?.role === 'ADMIN' && !(req.user?.branch_ids ?? []).length)) return (req.user?.branch_ids ?? []).includes(selected) ? { sql: ` AND ${branchColumn}=?`, params: [selected] } : { sql: ' AND 1=0', params: [] as number[] };
+  if (!branchScopedMasters.has(master) || ['SUPER_ADMIN'].includes(String(req.user?.role)) || (req.user?.role === 'ADMIN' && !(req.user?.branch_ids ?? []).length)) return selected ? { sql: ` AND ${branchColumn}=?`, params: [selected] } : { sql: '', params: [] as number[] };
   const ids = req.user?.branch_ids ?? [];
-  return ids.length ? { sql: ` AND ${alias}.branch_id IN (${ids.map(() => '?').join(',')})`, params: ids } : { sql: ' AND 1=0', params: [] as number[] };
+  return ids.length ? { sql: ` AND ${branchColumn} IN (${ids.map(() => '?').join(',')})`, params: ids } : { sql: ' AND 1=0', params: [] as number[] };
 };
 
 const companyLogoUpload=multer({storage:companyStorage('company-profile',req=>Number(req.user?.company_id)),limits:{fileSize:env.maxUploadSizeMb*1024*1024,files:1},fileFilter:(_req,file,callback)=>['image/jpeg','image/png','image/webp'].includes(file.mimetype)?callback(null,true):callback(new Error('Company logo must be JPG, PNG or WEBP'))}).single('logo');
@@ -52,7 +55,7 @@ router.param('master', (req, res, next, value) => {
   next();
 });
 
-router.get('/:master/options', requireMasterAction('VIEW'), asyncRoute(async (req, res) => {
+router.get('/:master/options', asyncRoute(async (req, res) => {
   const master=req.params.master as MasterName,cfg: MasterConfig = masterConfigs[master];
   if(master==='companies'){res.json({data:req.user!.company_id?await query('SELECT * FROM companies WHERE id=?',[req.user!.company_id]):[]});return}
   const scope=branchScope(req,master);

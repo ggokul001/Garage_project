@@ -46,9 +46,9 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       if(trialExpired)return res.status(403).json({code:'TRIAL_EXPIRED',message:'Your trial period has expired. Please contact the administrator to activate your account.',details:{trial_ends_at:user.trial_ends_at}});
       if(user.company_status!=='active')return res.status(403).json({code:'COMPANY_INACTIVE',message:'Your company account is inactive. Please contact the administrator.'});
     }
-    const branchRows=isSuperAdmin||['ADMIN'].includes(user.role_code)?[]:await query<RowDataPacket & {branch_id:number}>('SELECT branch_id FROM user_branch_access WHERE user_id=? AND company_id=?',[user.id,user.company_id]);
+    const branchRows=isSuperAdmin?[]:await query<RowDataPacket & {branch_id:number}>('SELECT branch_id FROM user_branch_access WHERE user_id=? AND company_id=?',[user.id,user.company_id]);
     const branchIds=branchRows.map(row=>Number(row.branch_id));
-    if(!branchIds.length&&!isSuperAdmin&&!['ADMIN'].includes(user.role_code)&&user.branch_id)branchIds.push(Number(user.branch_id));
+    if(!branchIds.length&&!isSuperAdmin&&user.role_code!=='ADMIN'&&user.branch_id)branchIds.push(Number(user.branch_id));
     req.user = { id: user.id, username: user.username, role: user.role_code, permissions: await getPermissions(user.id), company_id:user.company_id, branch_id:user.branch_id??null, branch_ids:branchIds, is_super_admin:isSuperAdmin };
     next();
   } catch { return res.status(401).json({ message: 'Invalid or expired session' }); }

@@ -20,7 +20,20 @@ export async function execute(sql: string, params: unknown[] = []): Promise<Resu
 }
 
 export async function withTransaction<T>(handler:(connection:PoolConnection)=>Promise<T>):Promise<T>{
-  const connection=await pool.getConnection();
-  try{await connection.beginTransaction();const result=await handler(connection);await connection.commit();return result}
-  catch(error){await connection.rollback();throw error}finally{connection.release()}
+  let lastError: unknown;
+  for(let attempt=0;attempt<2;attempt++){
+    const connection=await pool.getConnection();
+    try{
+      await connection.beginTransaction();
+      const result=await handler(connection);
+      await connection.commit();
+      return result;
+    }catch(error){
+      lastError=error;
+      try{await connection.rollback()}catch{}
+      const message=String((error as Error)?.message??'');
+      if(!message.toLowerCase().includes('connection is in closed state')||attempt===1)throw error;
+    }finally{connection.release()}
+  }
+  throw lastError;
 }

@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { MessageCircle, Printer, ReceiptText, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { transactionApi } from '../../api';
+import { masterApi, transactionApi } from '../../api';
 import { useFy } from '../../fyStore';
 import { useListQueryState } from '../../hooks/useListQueryState';
 import { ListPagination } from '../../components/ListPagination';
@@ -12,11 +12,13 @@ import { shareBillWhatsApp } from '../../utils/whatsappShare';
 
 export function BillingPage() {
   const fy = useFy((s) => s.activeId);
+  const [branchId,setBranchId] = useState(0);
+  const branches = useQuery({ queryKey: ['options','branches'], queryFn: () => masterApi.options('branches') });
   const { page, pageSize, search, setPage, setPageSize, setSearch } = useListQueryState();
   const [searchText, setSearchText] = useState(search);
   const list = useQuery({
-    queryKey: ['billing-accounts', fy, page, pageSize, search],
-    queryFn: () => transactionApi.accounts({ financial_year_id: fy, page, pageSize, search }),
+    queryKey: ['billing-accounts', fy, page, pageSize, search, branchId],
+    queryFn: () => transactionApi.accounts({ financial_year_id: fy, page, pageSize, search, branch_id: branchId || undefined }),
     enabled: !!fy,
   });
 
@@ -65,6 +67,7 @@ export function BillingPage() {
               Search
             </button>
           </form>
+          <select className="input max-w-xs" value={branchId} onChange={event=>{setBranchId(Number(event.target.value));setPage(1)}}><option value={0}>All branches</option>{branches.data?.map(branch=><option key={branch.id} value={branch.id}>{String(branch.name)}</option>)}</select>
           <span>{list.data?.meta.total ?? 0} bills</span>
         </div>
         <div className="overflow-x-auto">

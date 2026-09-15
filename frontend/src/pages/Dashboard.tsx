@@ -25,7 +25,7 @@ export function Dashboard({view='operations'}:{view?:'operations'|'md'}){
 
 function OperationsDashboard({data,canViewJobs}:{data:any;canViewJobs:boolean}){const open=Number(data.works?.pending??0)+Number(data.works?.partial??0);return <>
   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Kpi label="Job Cards This Month" value={count(data.jobs?.this_month)} note={`${count(data.jobs?.total)} total in FY`} icon={BriefcaseBusiness} color="blue"/><Kpi label="Open Work Orders" value={count(open)} note={`${count(data.works?.completed)} completed`} icon={Wrench} color="amber"/><Kpi label="Total Collected" value={amount(data.finance?.collected)} note="Advance + receipts" icon={IndianRupee} color="emerald"/><Kpi label="Customer Receivable" value={amount(data.finance?.receivable)} note={`${count(data.service_due?.length)} service reminders`} icon={ReceiptIndianRupee} color="violet"/></div>
-  <div className="grid gap-4 xl:grid-cols-3"><AttendanceSummary data={data.attendance??{}}/><PaymentSummary data={data.payment_status??{}}/><PurchaseSummary data={data}/></div>
+  <div className="grid gap-4 xl:grid-cols-2"><PaymentSummary data={data.payment_status??{}}/><PurchaseSummary data={data}/></div>
   <div className="grid gap-4 xl:grid-cols-[1.45fr_.75fr]"><ServiceDue rows={data.service_due??[]} canView={canViewJobs}/><WorkSummary data={data}/></div>
   <div className="grid gap-4 xl:grid-cols-[1.1fr_.9fr]"><Trend rows={data.trend??[]}/><RecentJobs rows={data.recent_jobs??[]} canView={canViewJobs}/></div>
   <div className="grid gap-4 xl:grid-cols-[.75fr_1.25fr]"><PendingReasons rows={data.pending_reasons??[]}/><RecentWorks rows={data.recent_works??[]}/></div>

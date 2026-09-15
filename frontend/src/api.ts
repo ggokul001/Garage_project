@@ -34,7 +34,7 @@ client.interceptors.response.use((r) => r, async (error) => {
 
 export const masterApi = {
   list: async (slug: MasterSlug, params: { page: number; pageSize: number; search: string }) => (await client.get<ListResponse>(`/masters/${slug}`, { params })).data,
-  options: async (slug: MasterSlug) => (await client.get<{ data: RecordData[] }>(`/masters/${slug}/options`)).data.data,
+  options: async (slug: MasterSlug, branchId?: number | string) => (await client.get<{ data: RecordData[] }>(`/masters/${slug}/options`, { params: { branch_id: branchId || undefined } })).data.data,
   create: async (slug: MasterSlug, data: Record<string, unknown>) => (await client.post(`/masters/${slug}`, data)).data,
   update: async (slug: MasterSlug, id: number, data: Record<string, unknown>) => (await client.put(`/masters/${slug}/${id}`, data)).data,
   remove: async (slug: MasterSlug, id: number) => (await client.delete(`/masters/${slug}/${id}`)).data,
@@ -114,7 +114,7 @@ export const superAdminPaymentApi={
 
 export const transactionApi={
   financialYears:async()=>(await client.get('/financial-years')).data.data as RecordData[],
-  autocomplete:async(type:'vehicles'|'customers'|'vendors'|'employees'|'products'|'pending-statuses',search:string)=>(await client.get(`/lookups/${type}`,{params:{search}})).data.data as RecordData[],
+  autocomplete:async(type:'vehicles'|'customers'|'vendors'|'employees'|'products'|'pending-statuses',search:string,branchId?:number|string)=>(await client.get(`/lookups/${type}`,{params:{search,branch_id:branchId||undefined}})).data.data as RecordData[],
   jobCards:async(params:Record<string,unknown>)=>(await client.get('/job-cards',{params})).data,
   jobCard:async(id:number)=>(await client.get(`/job-cards/${id}`)).data.data,
   createJobCard:async(data:Record<string,unknown>)=>(await client.post('/job-cards',data)).data,
@@ -127,6 +127,8 @@ export const transactionApi={
   workOrders:async(params:Record<string,unknown>)=>(await client.get('/work-orders',{params})).data,
   workOrder:async(id:number)=>(await client.get(`/work-orders/${id}`)).data.data,
   updateWorkOrder:async(id:number,data:Record<string,unknown>)=>(await client.put(`/work-orders/${id}`,data)).data,
+  deleteWorkOrderComplaint:async(workOrderId:number,id:number)=>(await client.delete(`/work-orders/${workOrderId}/complaints/${id}`)).data,
+  updateWorkOrderComplaintCost:async(workOrderId:number,id:number,cost:number)=>(await client.patch(`/work-orders/${workOrderId}/complaints/${id}/cost`,{cost})).data,
   deleteWorkOrder:async(id:number)=>(await client.delete(`/work-orders/${id}`)).data,
   approveWorkOrder:async(id:number)=>(await client.post(`/work-orders/${id}/approve`)).data,
   uploadAttachments:async(id:number,files:File[])=>{const form=new FormData();files.forEach(file=>form.append('files',file));return(await client.post(`/work-orders/${id}/attachments`,form,{headers:{'Content-Type':'multipart/form-data'}})).data},
@@ -154,6 +156,7 @@ export const transactionApi={
 export const payrollApi={
   options:async()=>(await client.get('/attendance/options')).data.data as {branches:RecordData[];shifts:RecordData[]},
   attendance:async(params:{date:string;branch_id:number})=>(await client.get('/attendance',{params})).data.data as RecordData[],
+  attendanceRange:async(params:{from:string;to:string;branch_id:number})=>(await client.get('/attendance/range',{params})).data.data as RecordData[],
   saveAttendance:async(data:Record<string,unknown>)=>(await client.post('/attendance/bulk',data)).data,
   advances:async(params:Record<string,unknown>)=>(await client.get('/salary-advances',{params})).data as {data:RecordData[];meta:{page:number;pageSize:number;total:number}},
   createAdvance:async(data:Record<string,unknown>)=>(await client.post('/salary-advances',data)).data,

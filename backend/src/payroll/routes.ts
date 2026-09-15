@@ -53,10 +53,10 @@ router.post('/payroll/generate', requirePermission('PAYROLL_GENERATE'), asyncRou
     const [out] = await conn.execute<ResultSetHeader>('INSERT INTO payroll_runs(company_id,financial_year_id,salary_month,branch_id,created_by)VALUES(?,?,?,?,?)', [companyId,financial_year_id, salary_month, branch_id, req.user!.id]);
     run = out.insertId;
 } await conn.execute('DELETE FROM payroll_details WHERE payroll_run_id=?', [run]); const [employees] = await conn.query<RowDataPacket[]>('SELECT * FROM employees WHERE branch_id=? AND status="active" AND payroll_applicable=1', [branch_id]); for (const employee of employees) {
-    const [attendance] = await conn.query<RowDataPacket[]>(`SELECT attendance_type,COUNT(*) days,COALESCE(SUM(ot_hours),0) ot_hours FROM daily_attendance WHERE employee_id=? AND DATE_FORMAT(attendance_date,'%Y-%m')=? GROUP BY attendance_type`, [employee.id, salary_month]);
+    const [attendance] = await conn.query<RowDataPacket[]>(`SELECT attendance_type,COUNT(*) days,COALESCE(SUM(ot_hours),0) ot_hours FROM daily_attendance WHERE company_id=? AND branch_id=? AND employee_id=? AND DATE_FORMAT(attendance_date,'%Y-%m')=? GROUP BY attendance_type`, [companyId, branch_id, employee.id, salary_month]);
     const counts = Object.fromEntries(attendance.map(row => [row.attendance_type, Number(row.days)]));
     const ot = attendance.reduce((sum, row) => sum + Number(row.ot_hours), 0), payable = (counts.PRESENT || 0) + (counts.PERMISSION || 0) + (counts.HALF_DAY_LEAVE || 0) * .5, salary = Number(employee.monthly_salary || 0), earned = round(salary / monthDays * payable), otAmount = round(ot * Number(employee.ot_rate_per_hour || 0));
-    const [advance] = await conn.query<RowDataPacket[]>('SELECT COALESCE(SUM(amount),0) amount FROM salary_advances WHERE employee_id=? AND recovery_month=? AND status="PENDING" AND deleted_at IS NULL', [employee.id, salary_month]);
+    const [advance] = await conn.query<RowDataPacket[]>('SELECT COALESCE(SUM(amount),0) amount FROM salary_advances WHERE company_id=? AND employee_id=? AND recovery_month=? AND status="PENDING" AND deleted_at IS NULL', [companyId, employee.id, salary_month]);
     const advanceAmount = Number(advance[0].amount), net = Math.max(0, round(earned + otAmount - advanceAmount));
     await conn.execute('INSERT INTO payroll_details(company_id,payroll_run_id,employee_id,month_days,present_days,permission_days,half_days,leave_days,absent_days,payable_days,ot_hours,monthly_salary,earned_salary,ot_amount,advance_deduction,net_salary)VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [companyId,run, employee.id, monthDays, counts.PRESENT || 0, counts.PERMISSION || 0, counts.HALF_DAY_LEAVE || 0, counts.FULL_DAY_LEAVE || 0, counts.ABSENT || 0, payable, ot, salary, earned, otAmount, advanceAmount, net]);
 } return run; }); res.json({ data: { id: runId }, message: 'Monthly payroll generated' }); }));
@@ -73,4 +73,10 @@ router.get('/payroll/slip/:detailId', requirePermission('PAYROLL_VIEW'), asyncRo
     res.status(404).json({ message: 'Salary slip not found' });
     return;
 } res.json({ data: rows[0] }); }));
+router.get('/attendance/range', requirePermission('ATTENDANCE_VIEW'), asyncRoute(async (req,res)=>{
+  const from=String(req.query.from??''),to=String(req.query.to??''),branch=Number(req.query.branch_id);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(from)||!/^\d{4}-\d{2}-\d{2}$/.test(to)||!branch){res.json({data:[]});return}
+  const rows=await query<RowDataPacket & Record<string,unknown>>(`SELECT a.attendance_date,a.employee_id,e.code employee_code,CONCAT_WS(' ',e.first_name,e.last_name) employee_name,d.name department_name,a.attendance_type,a.in_time,a.out_time,COALESCE(a.permission_hours,0) permission_hours,COALESCE(a.ot_hours,0) ot_hours FROM daily_attendance a JOIN employees e ON e.id=a.employee_id LEFT JOIN departments d ON d.id=e.department_id WHERE a.company_id=? AND a.branch_id=? AND a.attendance_date BETWEEN ? AND ? ORDER BY e.first_name,e.last_name,a.attendance_date`,[req.user!.company_id,branch,from,to]);
+  res.json({data:rows});
+}));
 export default router;
