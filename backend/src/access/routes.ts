@@ -36,7 +36,19 @@ router.post('/auth/login',asyncRoute(async(req,res)=>{
   }
   await execute('UPDATE users SET last_login_at=NOW() WHERE id=?',[found.id]);
   const token=jwt.sign({sub:found.id,role:found.role_code},env.jwtSecret,{expiresIn:env.jwtAccessExpires as jwt.SignOptions['expiresIn']});
-  res.json({data:{token,user:await userDetails(found.id)}});
+  const refreshToken=jwt.sign({sub:found.id,type:'refresh'},env.jwtRefreshSecret,{expiresIn:env.jwtRefreshExpires as jwt.SignOptions['expiresIn']});
+  res.json({data:{token,refreshToken,user:await userDetails(found.id)}});
+}));
+router.post('/auth/refresh',asyncRoute(async(req,res)=>{
+  const token=typeof req.body?.refreshToken==='string'?req.body.refreshToken:'';
+  try{
+    const payload=jwt.verify(token,env.jwtRefreshSecret) as jwt.JwtPayload & {sub?:number;type?:string};
+    if(payload.type!=='refresh'||!payload.sub)throw new Error('Invalid refresh token');
+    const rows=await query<RowDataPacket & {id:number;role_code:string;status:string}>('SELECT u.id,u.status,r.code role_code FROM users u JOIN roles r ON r.id=u.role_id WHERE u.id=?',[payload.sub]);
+    if(!rows[0]||rows[0].status!=='active')throw new Error('Inactive user');
+    const accessToken=jwt.sign({sub:rows[0].id,role:rows[0].role_code},env.jwtSecret,{expiresIn:env.jwtAccessExpires as jwt.SignOptions['expiresIn']});
+    res.json({data:{token:accessToken}});
+  }catch{res.status(401).json({message:'Invalid or expired refresh token'});}
 }));
 router.get('/auth/me',authenticate,asyncRoute(async(req,res)=>{res.json({data:await userDetails(req.user!.id)});}));
 

@@ -5,12 +5,27 @@ export type MasterSlug = 'companies'|'branches'|'departments'|'designations'|'em
 export type ListResponse = { data: RecordData[]; meta: { page: number; pageSize: number; total: number } };
 
 const client = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL||'/api/v1', timeout: 60000 });
+let refreshPromise: Promise<string>|null=null;
 client.interceptors.request.use((config) => {
   const token=localStorage.getItem('ara-garage.token');
   if(token) config.headers.Authorization=`Bearer ${token}`;
   return config;
 });
-client.interceptors.response.use((r) => r, (error) => {
+client.interceptors.response.use((r) => r, async (error) => {
+  const original=error.config;
+  const refreshToken=localStorage.getItem('ara-garage.refresh-token');
+  if(error.response?.status===401&&refreshToken&&original&&!original._retry&&!String(original.url??'').endsWith('/auth/refresh')){
+    original._retry=true;
+    try{
+      refreshPromise??=client.post('/auth/refresh',{refreshToken}).then(response=>{const token=String(response.data.data.token);localStorage.setItem('ara-garage.token',token);return token}).finally(()=>{refreshPromise=null});
+      const token=await refreshPromise;
+      original.headers.Authorization=`Bearer ${token}`;
+      return client(original);
+    }catch{
+      localStorage.removeItem('ara-garage.token');
+      localStorage.removeItem('ara-garage.refresh-token');
+    }
+  }
   const data=error.response?.data??{},timedOut=error.code==='ECONNABORTED',message=String(data.message??(timedOut?'The request is taking longer than expected. Please wait and check before submitting again.':'Unable to complete request')),code=String(data.code??''),hasSession=Boolean(localStorage.getItem('ara-garage.token'));
   if(hasSession&&(code==='COMPANY_INACTIVE'||code==='TRIAL_EXPIRED'))sessionStorage.setItem('ara-garage.access-blocked',JSON.stringify({code,message,details:data.details??{}}));
   if(hasSession&&(error.response?.status===401||code==='COMPANY_INACTIVE'||code==='TRIAL_EXPIRED')){localStorage.removeItem('ara-garage.token');window.location.assign(`${import.meta.env.BASE_URL}login`)}
@@ -34,7 +49,7 @@ export type NavItem={id:number;parent_id?:number;title:string;route?:string;icon
 export type PlatformProduct=RecordData&{code:string;name:string;tagline?:string;product_url?:string;logo_data_url?:string;display_order:number;open_new_tab:number};
 export type AppNotification={key:string;type:'TRIAL'|'PAYMENT';severity:'info'|'warning'|'critical';title:string;message:string;created_at:string;details:Record<string,unknown>;is_read:boolean;acknowledged:boolean};
 export const accessApi={
-  login:async(login:string,password:string)=>(await client.post('/auth/login',{login,password})).data.data as {token:string;user:User},
+  login:async(login:string,password:string)=>(await client.post('/auth/login',{login,password})).data.data as {token:string;refreshToken:string;user:User},
   me:async()=>(await client.get('/auth/me')).data.data as User,
   navigation:async()=>(await client.get('/navigation')).data.data as NavItem[],
   permissions:async()=>(await client.get('/permissions')).data.data as Permission[],
