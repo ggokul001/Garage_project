@@ -64,11 +64,16 @@ router.get('/:master/options', requireMasterAction('VIEW'), asyncRoute(async (re
 
 router.get('/:master', requireMasterAction('VIEW'), asyncRoute(async (req, res) => {
   const master=req.params.master as MasterName,cfg: MasterConfig = masterConfigs[master];
-  if(master==='companies'&&!req.user!.is_super_admin){const rows=await query<RowDataPacket&Record<string,unknown>>('SELECT * FROM companies WHERE id=?',[req.user!.company_id]);res.json({data:rows,meta:{page:1,pageSize:1,total:rows.length}});return}
   const page = Math.max(1, Number(req.query.page) || 1);
   const pageSize = Math.min(100, Math.max(5, Number(req.query.pageSize) || 15));
   const search = String(req.query.search ?? '').trim();
-  const clauses:string[]=[];const params:unknown[]=[];if(tenantMaster(master)){clauses.push('m.company_id=?');params.push(req.user!.company_id);const scope=branchScope(req,master);if(scope.sql)clauses.push(scope.sql.replace(/^ AND /,''));params.push(...scope.params)}
+  const clauses:string[]=[];const params:unknown[]=[];
+  if(master==='companies'&&!req.user!.is_super_admin){
+    clauses.push('m.id=?');params.push(req.user!.company_id);
+  } else if(tenantMaster(master)){
+    clauses.push('m.company_id=?');params.push(req.user!.company_id);
+    const scope=branchScope(req,master);if(scope.sql)clauses.push(scope.sql.replace(/^ AND /,''));params.push(...scope.params)
+  }
   if(search){clauses.push(`(${cfg.search.map((column) => `${column} LIKE ?`).join(' OR ')})`);params.push(...cfg.search.map(() => `%${search}%`))}
   const where=clauses.length?`WHERE ${clauses.join(' AND ')}`:'';
   const count = await query<RowDataPacket & { total: number }>(
