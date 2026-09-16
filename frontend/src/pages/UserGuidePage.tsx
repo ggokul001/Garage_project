@@ -509,7 +509,8 @@ export function UserGuidePage() {
   const superAdmin = useAuth((state) => state.user?.role_code === 'SUPER_ADMIN');
   const [search, setSearch] = useState('');
   const normalizedSearch = search.trim().toLowerCase();
-  const handbook = superAdmin ? superAdminGuides : guides;
+  const hiddenGuides = new Set(['Daily Attendance','Salary Advance','Payroll, Salary Slip & Reports']);
+  const handbook = superAdmin ? superAdminGuides : guides.filter((guide) => !hiddenGuides.has(guide.title));
   const list = handbook.filter((guide) =>
     `${guide.title} ${guide.summary} ${guide.steps.join(' ')}`.toLowerCase().includes(normalizedSearch),
   );

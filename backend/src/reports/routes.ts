@@ -6,12 +6,14 @@ const router = Router();
 router.use(authenticate);
 router.use((req,res,next)=>{const raw=req.query.branch_id; if(raw!==undefined&&raw!==''){const branchId=Number(raw);if(!['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role))&&!(req.user?.branch_ids??[]).includes(branchId))return res.status(403).json({message:'You do not have access to this branch'});} next();});
 const asyncRoute = (fn: (req: Request, res: Response) => Promise<void>) => (req: Request, res: Response, next: NextFunction) => fn(req, res).catch(next);
+const hiddenAuditModules = ['attendance','payroll','salary advance','salary advances'];
+const hiddenEntryReports = new Set(['attendance','salary-advances','payroll']);
 router.get('/reports/audit/options', requirePermission('AUDIT_VIEW'), asyncRoute(async (req, res) => {
     const modules = await query<RowDataPacket & {
         module_name: string;
     }>('SELECT DISTINCT module_name FROM audit_logs WHERE company_id=? ORDER BY module_name',[req.user!.company_id]);
     const users = await query<RowDataPacket & Record<string, unknown>>('SELECT id,full_name,username FROM users WHERE company_id=? ORDER BY full_name',[req.user!.company_id]);
-    res.json({ data: { modules: modules.map(row => row.module_name), users } });
+    res.json({ data: { modules: modules.map(row => row.module_name).filter(name => !hiddenAuditModules.includes(String(name).trim().toLowerCase())), users } });
 }));
 router.get('/reports/audit', requirePermission('AUDIT_VIEW'), asyncRoute(async (req, res) => {
     const page = Math.max(1, Number(req.query.page) || 1), pageSize = Math.min(100, Math.max(10, Number(req.query.pageSize) || 25));
@@ -24,6 +26,8 @@ router.get('/reports/audit', requirePermission('AUDIT_VIEW'), asyncRoute(async (
     const add = (sql: string, value: unknown) => { clauses.push(sql); params.push(value); };
     if (req.query.module)
         add('a.module_name=?', String(req.query.module));
+    clauses.push(`LOWER(a.module_name) NOT IN (${hiddenAuditModules.map(() => '?').join(',')})`);
+    params.push(...hiddenAuditModules);
     if (req.query.action)
         add('a.action=?', String(req.query.action));
     if (req.query.user_id)
@@ -84,11 +88,11 @@ router.get('/reports/entries/options', requirePermission('ENTRY_REPORT_VIEW'), a
     const branchWhere=unrestricted?'':ids.length?` AND id IN (${ids.map(()=>'?').join(',')})`:' AND 1=0';
     const branches = await query<RowDataPacket & Record<string, unknown>>(`SELECT id,name FROM branches WHERE company_id=? AND status='active'${branchWhere} ORDER BY name`,unrestricted?[req.user!.company_id]:[req.user!.company_id,...ids]);
     const vendors = await query<RowDataPacket & Record<string, unknown>>("SELECT id,name,code FROM vendors WHERE company_id=? AND status='active' ORDER BY name",[req.user!.company_id]);
-    res.json({ data: { reports: Object.entries(reports).map(([key, value]) => ({ key, label: value.label })), branches, vendors } });
+    res.json({ data: { reports: Object.entries(reports).filter(([key]) => !hiddenEntryReports.has(key)).map(([key, value]) => ({ key, label: value.label })), branches, vendors } });
 }));
 router.get('/reports/entries/:type', requirePermission('ENTRY_REPORT_VIEW'), asyncRoute(async (req, res) => {
     const def = reports[req.params.type];
-    if (!def) {
+    if (!def || hiddenEntryReports.has(req.params.type)) {
         res.status(404).json({ message: 'Report not found' });
         return;
     }

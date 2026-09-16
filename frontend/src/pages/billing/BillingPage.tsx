@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { MessageCircle, Printer, ReceiptText, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -13,21 +13,19 @@ import { shareBillWhatsApp } from '../../utils/whatsappShare';
 export function BillingPage() {
   const fy = useFy((s) => s.activeId);
   const [branchId,setBranchId] = useState(0);
+  const [from,setFrom] = useState('');
+  const [to,setTo] = useState('');
   const branches = useQuery({ queryKey: ['options','branches'], queryFn: () => masterApi.options('branches') });
   const { page, pageSize, search, setPage, setPageSize, setSearch } = useListQueryState();
-  const [searchText, setSearchText] = useState(search);
+  const [searchText,setSearchText] = useState(search);
   const list = useQuery({
-    queryKey: ['billing-accounts', fy, page, pageSize, search, branchId],
-    queryFn: () => transactionApi.accounts({ financial_year_id: fy, page, pageSize, search, branch_id: branchId || undefined }),
+    queryKey: ['billing-accounts', fy, page, pageSize, search, branchId, from, to],
+    queryFn: () => transactionApi.accounts({ financial_year_id: fy, page, pageSize, search, branch_id: branchId || undefined, from: from || undefined, to: to || undefined }),
     enabled: !!fy,
   });
 
-  useEffect(() => setSearchText(search), [search]);
-
-  const submitSearch = (event: FormEvent) => {
-    event.preventDefault();
-    setSearch(searchText.trim());
-  };
+  useEffect(()=>setSearchText(search),[search]);
+  useEffect(()=>{const timer=window.setTimeout(()=>{if(searchText!==search)setSearch(searchText)},250);return()=>window.clearTimeout(timer)},[searchText,search,setSearch]);
 
   const printBill = async (jobCardId: number) => {
     try {
@@ -51,23 +49,21 @@ export function BillingPage() {
     <div>
       <PageTitle title="Billing" subtitle="Generate and print customer bills from approved Job Cards" icon={ReceiptText} />
       <div className="panel overflow-hidden">
-        <div className="table-toolbar">
-          <form className="flex max-w-xl flex-1 gap-2" onSubmit={submitSearch}>
-            <div className="relative flex-1">
-              <Search className="search-icon" size={15} />
-              <input
-                className="input pl-9"
-                value={searchText}
-                onChange={(event) => setSearchText(event.target.value)}
-                placeholder="Customer, vehicle, contact, Job Card, Work Order..."
-              />
-            </div>
-            <button type="submit" className="btn-secondary h-10 px-3 text-xs">
-              <Search size={14} />
-              Search
-            </button>
-          </form>
+        <div className="table-toolbar flex-wrap">
+          <div className="relative max-w-xl flex-1">
+            <Search className="search-icon" size={15} />
+            <input
+              className="input pl-9"
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              placeholder="Customer, vehicle, contact, Job Card, Work Order..."
+            />
+          </div>
           <select className="input max-w-xs" value={branchId} onChange={event=>{setBranchId(Number(event.target.value));setPage(1)}}><option value={0}>All branches</option>{branches.data?.map(branch=><option key={branch.id} value={branch.id}>{String(branch.name)}</option>)}</select>
+          <div className="grid grid-cols-2 gap-2">
+            <input className="input" type="date" value={from} onChange={event=>{setFrom(event.target.value);setPage(1)}} title="From date" />
+            <input className="input" type="date" min={from||undefined} value={to} onChange={event=>{setTo(event.target.value);setPage(1)}} title="To date" />
+          </div>
           <span>{list.data?.meta.total ?? 0} bills</span>
         </div>
         <div className="overflow-x-auto">
