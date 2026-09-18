@@ -137,6 +137,7 @@ export const transactionApi={
   deleteWorkOrderVehicleImage:async(workOrderId:number,id:number)=>(await client.delete(`/work-orders/${workOrderId}/vehicle-images/${id}`)).data,
   downloadWorkOrderVehicleImage:async(workOrderId:number,id:number,name:string)=>{const response=await client.get(`/work-orders/${workOrderId}/vehicle-images/${id}/download`,{responseType:'blob'});const url=URL.createObjectURL(response.data),anchor=document.createElement('a');anchor.href=url;anchor.download=name;anchor.click();URL.revokeObjectURL(url)},
   accounts:async(params:Record<string,unknown>)=>(await client.get('/accounts',{params})).data,
+  saveNextService:async(jobCardId:number,data:Record<string,unknown>)=>(await client.patch(`/accounts/${jobCardId}/next-service`,data)).data,
   billing:async(jobCardId:number)=>(await client.get(`/billing/${jobCardId}`)).data.data,
   receipts:async(jobCardId:number)=>(await client.get(`/accounts/${jobCardId}/receipts`)).data.data as RecordData[],
     receivePayment:async(jobCardId:number,data:Record<string,unknown>)=>(await client.post(`/accounts/${jobCardId}/receipts-fast`,data)).data,
