@@ -117,6 +117,9 @@ export const transactionApi={
   autocomplete:async(type:'vehicles'|'customers'|'vendors'|'employees'|'products'|'pending-statuses',search:string,branchId?:number|string)=>(await client.get(`/lookups/${type}`,{params:{search,branch_id:branchId||undefined}})).data.data as RecordData[],
   jobCards:async(params:Record<string,unknown>)=>(await client.get('/job-cards',{params})).data,
   jobCard:async(id:number)=>(await client.get(`/job-cards/${id}`)).data.data,
+  createJobCardShare:async(id:number)=>(await client.post(`/job-cards/${id}/share-link`)).data.data as {token:string;expires_in_days:number},
+  createWorkOrderShare:async(id:number)=>(await client.post(`/work-orders/${id}/share-link`)).data.data as {token:string;expires_in_days:number},
+  createBillingShare:async(id:number)=>(await client.post(`/billing/${id}/share-link`)).data.data as {token:string;expires_in_days:number},
   createJobCard:async(data:Record<string,unknown>)=>(await client.post('/job-cards',data)).data,
   updateJobCard:async(id:number,data:Record<string,unknown>)=>(await client.put(`/job-cards/${id}`,data)).data,
   deleteJobCard:async(id:number)=>(await client.delete(`/job-cards/${id}`)).data,
@@ -152,6 +155,12 @@ export const transactionApi={
   createVendorPayment:async(data:Record<string,unknown>)=>(await client.post('/vendor-payments',data)).data,
   deleteVendorPayment:async(id:number)=>(await client.delete(`/vendor-payments/${id}`)).data,
   vendorOutstanding:async(params:Record<string,unknown>)=>(await client.get('/reports/vendor-outstanding',{params})).data as {data:RecordData[];summary:{credit_amount:number;paid_amount:number;outstanding_amount:number}},
+};
+
+export const publicShareApi={
+  jobCard:async(token:string)=>(await client.get(`/public/job-card-share/${encodeURIComponent(token)}`)).data.data as {job_card:Record<string,any>;company:Record<string,any>},
+  workOrder:async(token:string)=>(await client.get(`/public/work-order-share/${encodeURIComponent(token)}`)).data.data as {work_order:Record<string,any>;company:Record<string,any>},
+  billing:async(token:string)=>(await client.get(`/public/billing-share/${encodeURIComponent(token)}`)).data.data as {billing:Record<string,any>;company:Record<string,any>},
 };
 
 export const payrollApi={

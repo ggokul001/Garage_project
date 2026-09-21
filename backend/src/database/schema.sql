@@ -423,6 +423,28 @@ CREATE TABLE IF NOT EXISTS job_card_complaints (
   CONSTRAINT fk_job_complaint_job FOREIGN KEY (job_card_id) REFERENCES job_cards(id)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS job_card_share_links (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_id BIGINT UNSIGNED NOT NULL,
+  job_card_id BIGINT UNSIGNED NOT NULL,
+  work_order_id BIGINT UNSIGNED NULL,
+  document_type ENUM('JOB_CARD','WORK_ORDER','BILLING') NOT NULL DEFAULT 'JOB_CARD',
+  token_hash CHAR(64) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  revoked_at DATETIME NULL,
+  created_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_job_card_share_token (token_hash),
+  KEY idx_job_card_share_job (company_id,job_card_id),
+  KEY idx_work_order_share (company_id,work_order_id),
+  CONSTRAINT fk_job_card_share_company FOREIGN KEY (company_id) REFERENCES companies(id),
+  CONSTRAINT fk_job_card_share_job FOREIGN KEY (job_card_id) REFERENCES job_cards(id),
+  CONSTRAINT fk_job_card_share_user FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+ALTER TABLE job_card_share_links ADD COLUMN IF NOT EXISTS document_type ENUM('JOB_CARD','WORK_ORDER') NOT NULL DEFAULT 'JOB_CARD' AFTER job_card_id;
+ALTER TABLE job_card_share_links ADD COLUMN IF NOT EXISTS work_order_id BIGINT UNSIGNED NULL AFTER job_card_id;
+ALTER TABLE job_card_share_links MODIFY COLUMN document_type ENUM('JOB_CARD','WORK_ORDER','BILLING') NOT NULL DEFAULT 'JOB_CARD';
+
 CREATE TABLE IF NOT EXISTS job_card_vehicle_images (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   company_id BIGINT UNSIGNED NOT NULL,

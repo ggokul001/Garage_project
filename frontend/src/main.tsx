@@ -28,6 +28,9 @@ import { AuditReportPage } from './pages/reports/AuditReportPage';
 import { AttendancePage } from './pages/payroll/AttendancePage';
 import { SalaryAdvancePage } from './pages/payroll/SalaryAdvancePage';
 import { PayrollPage } from './pages/payroll/PayrollPage';
+import { SharedJobCardPage } from './pages/SharedJobCardPage';
+import { SharedWorkOrderPage } from './pages/SharedWorkOrderPage';
+import { SharedBillingPage } from './pages/SharedBillingPage';
 import { ThemeProvider } from './ThemeProvider';
 import { useAuth } from './authStore';
 import { enableNumericTextInputs } from './numericTextInputs';
@@ -67,6 +70,9 @@ function TenantPrintBridge(){
 
 function App(){return <><TenantPrintBridge/><Routes>
   <Route path="/login" element={<LoginPage/>}/>
+    <Route path="/share/job-card/:token" element={<SharedJobCardPage/>}/>
+    <Route path="/share/work-order/:token" element={<SharedWorkOrderPage/>}/>
+    <Route path="/share/billing/:token" element={<SharedBillingPage/>}/>
   <Route element={<Protected/>}>
     <Route index element={<Home/>}/>
     <Route path="super-admin/dashboard" element={<SuperAdminDashboardPage/>}/>
