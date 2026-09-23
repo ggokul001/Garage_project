@@ -986,6 +986,27 @@ CREATE TABLE IF NOT EXISTS job_card_vehicle_images (
   CONSTRAINT fk_job_vehicle_image_deleted FOREIGN KEY(deleted_by) REFERENCES users(id)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS store_entry_attachments (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_id BIGINT UNSIGNED NOT NULL,
+  store_entry_id BIGINT UNSIGNED NOT NULL,
+  original_name VARCHAR(255) NOT NULL,
+  stored_name VARCHAR(255) NOT NULL,
+  file_path VARCHAR(500) NOT NULL,
+  mime_type VARCHAR(120) NOT NULL,
+  file_size BIGINT UNSIGNED NOT NULL,
+  uploaded_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  KEY idx_store_entry_attachments_entry (store_entry_id,deleted_at),
+  KEY idx_store_entry_attachments_company (company_id),
+  CONSTRAINT fk_store_attachment_company FOREIGN KEY(company_id) REFERENCES companies(id),
+  CONSTRAINT fk_store_attachment_entry FOREIGN KEY(store_entry_id) REFERENCES store_entries(id),
+  CONSTRAINT fk_store_attachment_user FOREIGN KEY(uploaded_by) REFERENCES users(id),
+  CONSTRAINT fk_store_attachment_deleted FOREIGN KEY(deleted_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS work_order_vehicle_images (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   company_id BIGINT UNSIGNED NOT NULL,
