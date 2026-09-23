@@ -46,5 +46,9 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (dbError.code === 'ER_ROW_IS_REFERENCED_2') return res.status(409).json({ message: 'This record is in use and cannot be deleted' });
   if (dbError.code === 'ER_NO_REFERENCED_ROW_2') return res.status(422).json({ message: 'A selected linked record does not exist' });
   console.error(error);
-  return res.status(500).json({ message: dbError.message ?? 'Internal server error' });
+  const isDatabaseError = typeof dbError.code === 'string' && dbError.code.startsWith('ER_');
+  const message = isDatabaseError && env.nodeEnv === 'production'
+    ? 'Unable to complete request'
+    : dbError.message ?? 'Internal server error';
+  return res.status(500).json({ message });
 });

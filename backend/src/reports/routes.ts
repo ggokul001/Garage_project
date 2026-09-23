@@ -2,9 +2,10 @@ import { NextFunction, Request, Response, Router } from 'express';
 import { RowDataPacket } from 'mysql2/promise';
 import { authenticate, requirePermission } from '../middleware/auth';
 import { query } from '../config/db';
+import { isCompanyWideRole } from '../security/branchAccess';
 const router = Router();
 router.use(authenticate);
-router.use((req,res,next)=>{const raw=req.query.branch_id; if(raw!==undefined&&raw!==''){const branchId=Number(raw);if(!['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role))&&!(req.user?.branch_ids??[]).includes(branchId))return res.status(403).json({message:'You do not have access to this branch'});} next();});
+router.use((req,res,next)=>{const raw=req.query.branch_id; if(raw!==undefined&&raw!==''){const branchId=Number(raw);if(!isCompanyWideRole(req.user?.role,req.user?.branch_ids??[])&&!(req.user?.branch_ids??[]).includes(branchId))return res.status(403).json({message:'You do not have access to this branch'});} next();});
 const asyncRoute = (fn: (req: Request, res: Response) => Promise<void>) => (req: Request, res: Response, next: NextFunction) => fn(req, res).catch(next);
 const hiddenAuditModules = ['attendance','payroll','salary advance','salary advances'];
 const hiddenEntryReports = new Set(['attendance','salary-advances','payroll']);
@@ -18,7 +19,7 @@ router.get('/reports/audit/options', requirePermission('AUDIT_VIEW'), asyncRoute
 router.get('/reports/audit', requirePermission('AUDIT_VIEW'), asyncRoute(async (req, res) => {
     const page = Math.max(1, Number(req.query.page) || 1), pageSize = Math.min(100, Math.max(10, Number(req.query.pageSize) || 25));
     const clauses: string[] = ['a.company_id=?'], params: unknown[] = [req.user!.company_id];
-    if (!['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role))) {
+    if (!isCompanyWideRole(req.user?.role, req.user?.branch_ids ?? [])) {
         const ids = req.user?.branch_ids ?? [];
         clauses.push(ids.length ? `(a.branch_id IN (${ids.map(() => '?').join(',')}) OR u.branch_id IN (${ids.map(() => '?').join(',')}))` : '1=0');
         params.push(...ids,...ids);
@@ -54,7 +55,7 @@ router.get('/audit/timeline', requirePermission('AUDIT_VIEW'), asyncRoute(async 
         res.status(422).json({ message: 'Entity type and record ID are required' });
         return;
     }
-    const ids=req.user?.branch_ids??[], scope=!['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role))?(ids.length?` AND (a.branch_id IN (${ids.map(()=>'?').join(',')}) OR u.branch_id IN (${ids.map(()=>'?').join(',')}))`:' AND 1=0'):'';
+    const ids=req.user?.branch_ids??[], scope=!isCompanyWideRole(req.user?.role,ids)?(ids.length?` AND (a.branch_id IN (${ids.map(()=>'?').join(',')}) OR u.branch_id IN (${ids.map(()=>'?').join(',')}))`:' AND 1=0'):'';
     const args=displayName ? [req.user!.company_id,entity,recordId,displayName,...ids,...ids] : [req.user!.company_id,entity,recordId,...ids,...ids];
     const rows = await query<RowDataPacket & Record<string, unknown>>(`SELECT a.*,u.full_name user_name,u.username FROM audit_logs a JOIN users u ON u.id=a.user_id WHERE a.company_id=? AND a.entity_type=? AND (a.record_id=? ${displayName ? 'OR a.record_display_name=?' : ''})${scope} ORDER BY a.id DESC LIMIT 200`, args);
     res.json({ data: rows });
@@ -84,7 +85,7 @@ const reports: Record<string, ReportDefinition> = {
     'payroll': { label: 'Payroll', date: 'STR_TO_DATE(CONCAT(r.salary_month,"-01"),"%Y-%m-%d")', fy: 'r.financial_year_id', branch: 'r.branch_id', status: 'r.status', search: ['e.code', 'e.first_name', 'e.last_name', 'd.name'], order: 'r.salary_month DESC,e.first_name', sql: `SELECT r.salary_month,b.name branch_name,r.status payroll_status,e.code employee_code,CONCAT_WS(' ',e.first_name,e.last_name) employee_name,d.name department_name,p.month_days,p.present_days,p.permission_days,p.half_days,p.leave_days,p.absent_days,p.payable_days,p.ot_hours,p.monthly_salary,p.earned_salary,p.ot_amount,p.advance_deduction,p.other_earnings,p.other_deductions,p.net_salary FROM payroll_details p JOIN payroll_runs r ON r.id=p.payroll_run_id JOIN branches b ON b.id=r.branch_id JOIN employees e ON e.id=p.employee_id LEFT JOIN departments d ON d.id=e.department_id` },
 };
 router.get('/reports/entries/options', requirePermission('ENTRY_REPORT_VIEW'), asyncRoute(async (req, res) => {
-    const unrestricted=['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role)),ids=req.user?.branch_ids??[];
+    const ids=req.user?.branch_ids??[],unrestricted=isCompanyWideRole(req.user?.role,ids);
     const branchWhere=unrestricted?'':ids.length?` AND id IN (${ids.map(()=>'?').join(',')})`:' AND 1=0';
     const branches = await query<RowDataPacket & Record<string, unknown>>(`SELECT id,name FROM branches WHERE company_id=? AND status='active'${branchWhere} ORDER BY name`,unrestricted?[req.user!.company_id]:[req.user!.company_id,...ids]);
     const vendors = await query<RowDataPacket & Record<string, unknown>>("SELECT id,name,code FROM vendors WHERE company_id=? AND status='active' ORDER BY name",[req.user!.company_id]);
@@ -99,7 +100,7 @@ router.get('/reports/entries/:type', requirePermission('ENTRY_REPORT_VIEW'), asy
     const tenantAliases:Record<string,string>={'job-cards':'j','work-orders':'w','work-order-complaints':'w','accounts':'j','customer-receipts':'p','stores':'s','store-spares':'s','vendor-payments':'p','attendance':'a','salary-advances':'sa','payroll':'r'};
     const clauses: string[] = [`${tenantAliases[req.params.type]}.company_id=?`];
     const params: unknown[] = [req.user!.company_id];
-    if(def.branch && !['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role))){const ids=req.user?.branch_ids??[];clauses.push(ids.length?`${def.branch} IN (${ids.map(()=>'?').join(',')})`:'1=0');params.push(...ids);}
+    if(def.branch && !isCompanyWideRole(req.user?.role,req.user?.branch_ids??[])){const ids=req.user?.branch_ids??[];clauses.push(ids.length?`${def.branch} IN (${ids.map(()=>'?').join(',')})`:'1=0');params.push(...ids);}
     if (req.params.type === 'job-cards' || req.params.type === 'accounts')
         clauses.push('j.deleted_at IS NULL');
     if (req.params.type.startsWith('work-order'))

@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS customers (
 
 CREATE TABLE IF NOT EXISTS vendors (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_id BIGINT UNSIGNED NOT NULL,
   code VARCHAR(20) NOT NULL UNIQUE,
   name VARCHAR(150) NOT NULL,
   contact_person VARCHAR(120) NULL,
@@ -610,6 +611,74 @@ INSERT IGNORE INTO navigation_items(parent_id,title,route,icon,permission_code,s
 SELECT id,'Pending Sub-status','/masters/work-pending-sub-statuses','Clock3','PENDING_STATUS_VIEW',11 FROM navigation_items WHERE title='Masters' AND route IS NULL;
 INSERT IGNORE INTO navigation_items(parent_id,title,route,icon,permission_code,sort_order)
 SELECT id,'Financial Years','/masters/financial-years','CalendarRange','FY_VIEW',12 FROM navigation_items WHERE title='Masters' AND route IS NULL;
+
+-- Inventory layer. Store Entries are the first-phase GRN/receipt source; stock is
+-- changed only through this ledger and its branch/product balance cache.
+CREATE TABLE IF NOT EXISTS inventory_balances (
+  company_id BIGINT UNSIGNED NOT NULL,
+  branch_id BIGINT UNSIGNED NOT NULL,
+  product_id BIGINT UNSIGNED NOT NULL,
+  quantity DECIMAL(14,3) NOT NULL DEFAULT 0,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (company_id,branch_id,product_id),
+  KEY idx_inventory_balance_product (company_id,product_id),
+  CONSTRAINT fk_inventory_balance_company FOREIGN KEY(company_id) REFERENCES companies(id),
+  CONSTRAINT fk_inventory_balance_branch FOREIGN KEY(branch_id) REFERENCES branches(id),
+  CONSTRAINT fk_inventory_balance_product FOREIGN KEY(product_id) REFERENCES products(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS stock_ledger (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_id BIGINT UNSIGNED NOT NULL,
+  branch_id BIGINT UNSIGNED NOT NULL,
+  product_id BIGINT UNSIGNED NOT NULL,
+  movement_type ENUM('OPENING','GRN_RECEIPT','WORK_ORDER_ISSUE','WORK_ORDER_RETURN','PURCHASE_RETURN','ADJUSTMENT_IN','ADJUSTMENT_OUT') NOT NULL,
+  quantity DECIMAL(14,3) NOT NULL,
+  rate DECIMAL(14,2) NOT NULL DEFAULT 0,
+  source_type VARCHAR(40) NOT NULL,
+  source_id BIGINT UNSIGNED NULL,
+  reference_no VARCHAR(80) NULL,
+  remarks VARCHAR(255) NULL,
+  created_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_stock_ledger_product_date (company_id,branch_id,product_id,created_at),
+  KEY idx_stock_ledger_source (company_id,source_type,source_id),
+  CONSTRAINT fk_stock_ledger_company FOREIGN KEY(company_id) REFERENCES companies(id),
+  CONSTRAINT fk_stock_ledger_branch FOREIGN KEY(branch_id) REFERENCES branches(id),
+  CONSTRAINT fk_stock_ledger_product FOREIGN KEY(product_id) REFERENCES products(id),
+  CONSTRAINT fk_stock_ledger_user FOREIGN KEY(created_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS stock_reservations (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_id BIGINT UNSIGNED NOT NULL,
+  branch_id BIGINT UNSIGNED NOT NULL,
+  work_order_id BIGINT UNSIGNED NOT NULL,
+  product_id BIGINT UNSIGNED NOT NULL,
+  quantity DECIMAL(14,3) NOT NULL DEFAULT 0,
+  status ENUM('RESERVED','RELEASED','CONSUMED') NOT NULL DEFAULT 'RESERVED',
+  created_by BIGINT UNSIGNED NOT NULL,
+  updated_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_stock_reservation_order_product (company_id,work_order_id,product_id),
+  KEY idx_stock_reservation_available (company_id,branch_id,product_id,status),
+  CONSTRAINT fk_stock_reservation_company FOREIGN KEY(company_id) REFERENCES companies(id),
+  CONSTRAINT fk_stock_reservation_branch FOREIGN KEY(branch_id) REFERENCES branches(id),
+  CONSTRAINT fk_stock_reservation_order FOREIGN KEY(work_order_id) REFERENCES work_orders(id),
+  CONSTRAINT fk_stock_reservation_product FOREIGN KEY(product_id) REFERENCES products(id),
+  CONSTRAINT fk_stock_reservation_created FOREIGN KEY(created_by) REFERENCES users(id),
+  CONSTRAINT fk_stock_reservation_updated FOREIGN KEY(updated_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+INSERT IGNORE INTO permissions(code,name,module,action) VALUES
+('INVENTORY_VIEW','View Inventory','Inventory','view'),
+('INVENTORY_LEDGER_VIEW','View Stock Ledger','Inventory','view');
+INSERT IGNORE INTO role_permissions(role_id,permission_id)
+SELECT r.id,p.id FROM roles r CROSS JOIN permissions p WHERE r.code='ADMIN' AND p.code IN ('INVENTORY_VIEW','INVENTORY_LEDGER_VIEW');
+INSERT IGNORE INTO navigation_items(title,route,icon,permission_code,sort_order)
+VALUES('Inventory','/inventory','Warehouse','INVENTORY_VIEW',34);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS reorder_level DECIMAL(14,3) NOT NULL DEFAULT 0 AFTER default_rate;
 
 CREATE TABLE IF NOT EXISTS store_entries (
   company_id BIGINT UNSIGNED NULL,
@@ -1241,3 +1310,13 @@ INSERT IGNORE INTO navigation_items(parent_id,title,route,icon,permission_code,s
 SELECT id,'Entry Reports','/reports/entries','TableProperties','ENTRY_REPORT_VIEW',1 FROM navigation_items WHERE title='Reports' AND route IS NULL;
 INSERT IGNORE INTO navigation_items(parent_id,title,route,icon,permission_code,sort_order)
 SELECT id,'Audit Report','/reports/audit','History','AUDIT_VIEW',2 FROM navigation_items WHERE title='Reports' AND route IS NULL;
+
+-- Treat existing Store Entries as opening GRN receipts once, so current data is
+-- immediately visible in inventory after this migration.
+INSERT INTO stock_ledger(company_id,branch_id,product_id,movement_type,quantity,rate,source_type,source_id,reference_no,created_by)
+SELECT s.company_id,s.branch_id,d.product_id,'GRN_RECEIPT',SUM(d.quantity),0,'LEGACY_STORE_ENTRY',s.id,s.store_no,s.created_by
+FROM store_entries s JOIN store_entry_details d ON d.store_entry_id=s.id AND d.is_deleted=0
+WHERE s.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM stock_ledger l WHERE l.source_type='LEGACY_STORE_ENTRY' AND l.source_id=s.id)
+GROUP BY s.company_id,s.branch_id,d.product_id,s.id,s.store_no,s.created_by;
+INSERT IGNORE INTO inventory_balances(company_id,branch_id,product_id,quantity)
+SELECT company_id,branch_id,product_id,SUM(quantity) FROM stock_ledger WHERE source_type='LEGACY_STORE_ENTRY' GROUP BY company_id,branch_id,product_id;

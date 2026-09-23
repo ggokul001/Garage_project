@@ -114,7 +114,7 @@ export const superAdminPaymentApi={
 
 export const transactionApi={
   financialYears:async()=>(await client.get('/financial-years')).data.data as RecordData[],
-  autocomplete:async(type:'vehicles'|'customers'|'vendors'|'employees'|'products'|'pending-statuses',search:string,branchId?:number|string)=>(await client.get(`/lookups/${type}`,{params:{search,branch_id:branchId||undefined}})).data.data as RecordData[],
+  autocomplete:async(type:'vehicles'|'customers'|'vendors'|'employees'|'products'|'pending-statuses',search:string,branchId?:number|string)=>{const workOrderId=type==='products'?window.location.pathname.match(/^\/work-orders\/(\d+)/)?.[1]:undefined;return(await client.get(`/lookups/${type}`,{params:{search,branch_id:branchId||undefined,work_order_id:workOrderId}})).data.data as RecordData[]},
   jobCards:async(params:Record<string,unknown>)=>(await client.get('/job-cards',{params})).data,
   jobCard:async(id:number)=>(await client.get(`/job-cards/${id}`)).data.data,
   createJobCardShare:async(id:number)=>(await client.post(`/job-cards/${id}/share-link`)).data.data as {token:string;expires_in_days:number},
@@ -134,6 +134,7 @@ export const transactionApi={
   updateWorkOrderComplaintCost:async(workOrderId:number,id:number,cost:number)=>(await client.patch(`/work-orders/${workOrderId}/complaints/${id}/cost`,{cost})).data,
   deleteWorkOrder:async(id:number)=>(await client.delete(`/work-orders/${id}`)).data,
   approveWorkOrder:async(id:number)=>(await client.post(`/work-orders/${id}/approve`)).data,
+  returnWorkOrderSpare:async(id:number,data:{product_id:number;quantity:number})=>(await client.post(`/work-orders/${id}/spares/return`,data)).data,
   uploadAttachments:async(id:number,files:File[])=>{const form=new FormData();files.forEach(file=>form.append('files',file));return(await client.post(`/work-orders/${id}/attachments`,form,{headers:{'Content-Type':'multipart/form-data'}})).data},
   deleteAttachment:async(workOrderId:number,id:number)=>(await client.delete(`/work-orders/${workOrderId}/attachments/${id}`)).data,
   uploadWorkOrderVehicleImages:async(id:number,files:File[])=>{const form=new FormData();files.forEach(file=>form.append('images',file));return(await client.post(`/work-orders/${id}/vehicle-images`,form,{headers:{'Content-Type':'multipart/form-data'}})).data},
@@ -150,6 +151,9 @@ export const transactionApi={
   createStore:async(data:Record<string,unknown>)=>(await client.post('/stores',data)).data,
   updateStore:async(id:number,data:Record<string,unknown>)=>(await client.put(`/stores/${id}`,data)).data,
   deleteStore:async(id:number)=>(await client.delete(`/stores/${id}`)).data,
+  inventoryAvailability:async(params:Record<string,unknown>)=>(await client.get('/inventory/availability',{params})).data.data as RecordData[],
+  inventoryLedger:async(params:Record<string,unknown>)=>(await client.get('/inventory/ledger',{params})).data.data as RecordData[],
+  inventoryLowStock:async(params:Record<string,unknown>)=>(await client.get('/inventory/low-stock',{params})).data.data as RecordData[],
   vendorPayments:async(params:Record<string,unknown>)=>(await client.get('/vendor-payments',{params})).data.data as RecordData[],
   creditStores:async(params:Record<string,unknown>)=>(await client.get('/vendor-payments/credit-stores',{params})).data.data as RecordData[],
   createVendorPayment:async(data:Record<string,unknown>)=>(await client.post('/vendor-payments',data)).data,

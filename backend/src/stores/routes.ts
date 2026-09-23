@@ -3,9 +3,14 @@ import { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { z } from 'zod';
 import { authenticate, requirePermission } from '../middleware/auth';
 import { execute, query, withTransaction } from '../config/db';
+import { syncSourceQuantity } from '../inventory/service';
+import { canAccessBranch, isCompanyWideRole } from '../security/branchAccess';
 const router = Router();
 router.use(authenticate);
-const branchScope = (req: Request, alias: string) => { if (['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role))) return { sql:'', params:[] as number[] }; const ids=req.user?.branch_ids??[]; return ids.length ? { sql:` AND ${alias}.branch_id IN (${ids.map(()=>'?').join(',')})`, params:ids } : { sql:' AND 1=0', params:[] as number[] }; };
+const branchScope = (req: Request, alias: string) => { if (isCompanyWideRole(req.user?.role, req.user?.branch_ids??[])) return { sql:'', params:[] as number[] }; const ids=req.user?.branch_ids??[]; return ids.length ? { sql:` AND ${alias}.branch_id IN (${ids.map(()=>'?').join(',')})`, params:ids } : { sql:' AND 1=0', params:[] as number[] }; };
+const assertBranchAccess=(req:Request,branchId:number)=>{if(!canAccessBranch(req.user?.role,branchId,req.user?.branch_ids??[]))throw new Error('You do not have access to this branch')};
+const inventoryBranch=(req:Request,requested:number)=>{if(isCompanyWideRole(req.user?.role,req.user?.branch_ids??[]))return requested;const allowed=[...(req.user?.branch_ids??[]),Number(req.user?.branch_id??0)].filter(Boolean);return requested||Number(allowed[0]??0)};
+const inventoryBranchAllowed=(req:Request,branchId:number)=>isCompanyWideRole(req.user?.role,req.user?.branch_ids??[])||!branchId||canAccessBranch(req.user?.role,branchId,req.user?.branch_ids??[])||Number(req.user?.branch_id)===branchId;
 const asyncRoute = (fn: (req: Request, res: Response) => Promise<void>) => (req: Request, res: Response, next: NextFunction) => fn(req, res).catch(next);
 const id = z.coerce.number().int().positive(), money = z.coerce.number().min(0), round = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 async function nextNumber(conn: PoolConnection, type: string, fyId: number, prefix: string,companyId:number) {
@@ -19,7 +24,7 @@ async function nextNumber(conn: PoolConnection, type: string, fyId: number, pref
     return `${prefix}/${fy[0].code}/${String(next).padStart(6, '0')}`;
 }
 const detailSchema = z.object({ id: id.optional(), product_id: id, product_code: z.string().trim().min(1), product_name: z.string().trim().min(1), part_number: z.string().trim().optional().nullable(), hsn_code: z.string().trim().min(1), quantity: z.coerce.number().positive(), rate: money, gst_percent: z.coerce.number().min(0).max(100), discount_percent: z.coerce.number().min(0).max(100) });
-const storeSchema = z.object({ financial_year_id: id, store_type: z.enum(['CASH', 'CREDIT']), bill_no: z.string().trim().min(1).max(80), entry_date: z.string().date(), vendor_id: id, details: z.array(detailSchema).min(1) });
+const storeSchema = z.object({ financial_year_id: id, branch_id: id, store_type: z.enum(['CASH', 'CREDIT']), bill_no: z.string().trim().min(1).max(80), entry_date: z.string().date(), vendor_id: id, details: z.array(detailSchema).min(1) });
 type StoreData = z.infer<typeof storeSchema>;
 type CalculatedDetail = z.infer<typeof detailSchema> & {
     base_amount: number;
@@ -29,6 +34,12 @@ type CalculatedDetail = z.infer<typeof detailSchema> & {
     total_amount: number;
 };
 async function calculateStore(conn: PoolConnection, data: StoreData,companyId:number) {
+    const [branches] = await conn.query<RowDataPacket[]>('SELECT id FROM branches WHERE id=? AND company_id=?', [data.branch_id, companyId]);
+    if (!branches[0])
+        throw new Error('Selected branch does not belong to your company');
+    const [financialYears] = await conn.query<RowDataPacket[]>('SELECT id FROM financial_years WHERE id=? AND company_id=? AND status="active"', [data.financial_year_id, companyId]);
+    if (!financialYears[0])
+        throw new Error('Selected financial year does not exist or is inactive');
     const [vendors] = await conn.query<RowDataPacket[]>('SELECT id,gstin,gst_type FROM vendors WHERE id=? AND company_id=? AND status="active"', [data.vendor_id,companyId]);
     const vendor = vendors[0];
     if (!vendor)
@@ -53,14 +64,16 @@ router.get('/stores/:id', requirePermission('STORE_VIEW'), asyncRoute(async (req
 router.post('/stores', requirePermission('STORE_CREATE'), asyncRoute(async (req, res) => { const parsed = storeSchema.safeParse(req.body); if (!parsed.success) {
     res.status(422).json({ message: parsed.error.issues[0].message });
     return;
-} const data = parsed.data; const result = await withTransaction(async (conn) => { const companyId=Number(req.user!.company_id);const calculated = await calculateStore(conn, data,companyId), no = await nextNumber(conn, 'STORE', data.financial_year_id, 'ST',companyId); const [header] = await conn.execute<ResultSetHeader>('INSERT INTO store_entries(company_id,branch_id,financial_year_id,store_no,store_type,bill_no,entry_date,vendor_id,vendor_gst_type,vendor_gstin,taxable_amount,gst_amount,discount_amount,net_amount,created_by,updated_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [companyId,req.user!.branch_id, data.financial_year_id, no, data.store_type, data.bill_no, data.entry_date, data.vendor_id, calculated.vendor.gst_type, calculated.vendor.gst_type === 'WITH_GST' ? calculated.vendor.gstin : null, calculated.summary.taxable_amount, calculated.summary.gst_amount, calculated.summary.discount_amount, calculated.summary.net_amount, req.user!.id, req.user!.id]); for (const [index, row] of calculated.rows.entries())
-    await insertDetail(conn, header.insertId, row, index + 1, req.user!.id,companyId); return { id: header.insertId, store_no: no }; }); res.status(201).json({ data: result, message: `Store Entry ${result.store_no} created` }); }));
+} const data = parsed.data; assertBranchAccess(req,data.branch_id); const result = await withTransaction(async (conn) => { const companyId=Number(req.user!.company_id);const calculated = await calculateStore(conn, data,companyId), no = await nextNumber(conn, 'STORE', data.financial_year_id, 'ST',companyId); const [header] = await conn.execute<ResultSetHeader>('INSERT INTO store_entries(company_id,branch_id,financial_year_id,store_no,store_type,bill_no,entry_date,vendor_id,vendor_gst_type,vendor_gstin,taxable_amount,gst_amount,discount_amount,net_amount,created_by,updated_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [companyId,data.branch_id, data.financial_year_id, no, data.store_type, data.bill_no, data.entry_date, data.vendor_id, calculated.vendor.gst_type, calculated.vendor.gst_type === 'WITH_GST' ? calculated.vendor.gstin : null, calculated.summary.taxable_amount, calculated.summary.gst_amount, calculated.summary.discount_amount, calculated.summary.net_amount, req.user!.id, req.user!.id]); for (const [index, row] of calculated.rows.entries())
+    { await insertDetail(conn, header.insertId, row, index + 1, req.user!.id,companyId);
+    await syncSourceQuantity(conn,{companyId,branchId:data.branch_id,productId:row.product_id,desiredQuantity:row.quantity,rate:row.rate,sourceType:'STORE_ENTRY',sourceId:Number(header.insertId),referenceNo:no,userId:req.user!.id}); }
+    return { id: header.insertId, store_no: no }; }); res.status(201).json({ data: result, message: `Store Entry ${result.store_no} created` }); }));
 router.put('/stores/:id', requirePermission('STORE_UPDATE'), asyncRoute(async (req, res) => { const parsed = storeSchema.safeParse(req.body); if (!parsed.success) {
     res.status(422).json({ message: parsed.error.issues[0].message });
     return;
-} const data = parsed.data; await withTransaction(async (conn) => { const companyId=Number(req.user!.company_id);const [stores] = await conn.query<RowDataPacket[]>('SELECT id FROM store_entries WHERE id=? AND company_id=? AND deleted_at IS NULL FOR UPDATE', [req.params.id,companyId]); if (!stores[0])
+} const data = parsed.data; assertBranchAccess(req,data.branch_id); await withTransaction(async (conn) => { const companyId=Number(req.user!.company_id);const [stores] = await conn.query<RowDataPacket[]>('SELECT id,branch_id FROM store_entries WHERE id=? AND company_id=? AND deleted_at IS NULL FOR UPDATE', [req.params.id,companyId]); if (!stores[0])
     throw new Error('Store Entry not found'); const [payments] = await conn.query<RowDataPacket[]>('SELECT COUNT(*) count FROM vendor_payment_allocations a JOIN vendor_payments p ON p.id=a.vendor_payment_id AND p.is_deleted=0 WHERE a.store_entry_id=?', [req.params.id]); if (Number(payments[0].count) > 0)
-    throw new Error('Store Entry cannot be edited after payment generation');const[fy]=await conn.query<RowDataPacket[]>('SELECT id FROM financial_years WHERE id=? AND company_id=?',[data.financial_year_id,companyId]);if(!fy[0])throw new Error('Financial year does not belong to your company'); const calculated = await calculateStore(conn, data,companyId); await conn.execute('UPDATE store_entries SET financial_year_id=?,store_type=?,bill_no=?,entry_date=?,vendor_id=?,vendor_gst_type=?,vendor_gstin=?,taxable_amount=?,gst_amount=?,discount_amount=?,net_amount=?,updated_by=? WHERE id=? AND company_id=?', [data.financial_year_id, data.store_type, data.bill_no, data.entry_date, data.vendor_id, calculated.vendor.gst_type, calculated.vendor.gst_type === 'WITH_GST' ? calculated.vendor.gstin : null, calculated.summary.taxable_amount, calculated.summary.gst_amount, calculated.summary.discount_amount, calculated.summary.net_amount, req.user!.id, req.params.id,companyId]); const kept = calculated.rows.filter(r => r.id).map(r => r.id!); if (kept.length)
+    throw new Error('Store Entry cannot be edited after payment generation'); if(Number(stores[0].branch_id)!==data.branch_id){const [movements]=await conn.query<RowDataPacket[]>('SELECT id FROM stock_ledger WHERE source_type="STORE_ENTRY" AND source_id=? AND company_id=? LIMIT 1',[req.params.id,companyId]);if(movements[0])throw new Error('Branch cannot be changed after stock movement');}const[fy]=await conn.query<RowDataPacket[]>('SELECT id FROM financial_years WHERE id=? AND company_id=?',[data.financial_year_id,companyId]);if(!fy[0])throw new Error('Financial year does not belong to your company'); const calculated = await calculateStore(conn, data,companyId); await conn.execute('UPDATE store_entries SET branch_id=?,financial_year_id=?,store_type=?,bill_no=?,entry_date=?,vendor_id=?,vendor_gst_type=?,vendor_gstin=?,taxable_amount=?,gst_amount=?,discount_amount=?,net_amount=?,updated_by=? WHERE id=? AND company_id=?', [data.branch_id, data.financial_year_id, data.store_type, data.bill_no, data.entry_date, data.vendor_id, calculated.vendor.gst_type, calculated.vendor.gst_type === 'WITH_GST' ? calculated.vendor.gstin : null, calculated.summary.taxable_amount, calculated.summary.gst_amount, calculated.summary.discount_amount, calculated.summary.net_amount, req.user!.id, req.params.id,companyId]); const kept = calculated.rows.filter(r => r.id).map(r => r.id!); if (kept.length)
     await conn.query(`UPDATE store_entry_details SET is_deleted=1,deleted_at=NOW(),deleted_by=? WHERE store_entry_id=? AND is_deleted=0 AND id NOT IN (${kept.map(() => '?').join(',')})`, [req.user!.id, req.params.id, ...kept]);
 else
     await conn.execute('UPDATE store_entry_details SET is_deleted=1,deleted_at=NOW(),deleted_by=? WHERE store_entry_id=? AND is_deleted=0', [req.user!.id, req.params.id]); for (const [index, row] of calculated.rows.entries()) {
@@ -68,17 +81,44 @@ else
         await conn.execute('UPDATE store_entry_details SET product_id=?,product_code=?,product_name=?,part_number=?,hsn_code=?,quantity=?,rate=?,gst_percent=?,discount_percent=?,base_amount=?,discount_amount=?,taxable_amount=?,gst_amount=?,total_amount=?,sort_order=?,updated_by=? WHERE id=? AND store_entry_id=?', [row.product_id, row.product_code, row.product_name, row.part_number || null, row.hsn_code, row.quantity, row.rate, row.gst_percent, row.discount_percent, row.base_amount, row.discount_amount, row.taxable_amount, row.gst_amount, row.total_amount, index + 1, req.user!.id, row.id, req.params.id]);
     else
         await insertDetail(conn, Number(req.params.id), row, index + 1, req.user!.id,companyId);
-} }); res.json({ message: 'Store Entry updated' }); }));
+    }
+    const [header] = await conn.query<RowDataPacket[]>('SELECT branch_id,store_no FROM store_entries WHERE id=? AND company_id=?',[req.params.id,companyId]);
+    const [oldProducts]=await conn.query<RowDataPacket[]>('SELECT DISTINCT product_id FROM stock_ledger WHERE company_id=? AND source_type="STORE_ENTRY" AND source_id=?',[companyId,req.params.id]); const desired=new Map<number,number>(); for(const row of calculated.rows) desired.set(Number(row.product_id),Number(desired.get(Number(row.product_id))??0)+Number(row.quantity)); const products=new Set<number>([...oldProducts.map(row=>Number(row.product_id)),...desired.keys()]); for(const productId of products) await syncSourceQuantity(conn,{companyId,branchId:Number(header[0]?.branch_id ?? req.user!.branch_id),productId,desiredQuantity:Number(desired.get(productId)??0),rate:0,sourceType:'STORE_ENTRY',sourceId:Number(req.params.id),referenceNo:String(header[0]?.store_no ?? req.params.id),userId:req.user!.id});
+}); res.json({ message: 'Store Entry updated' }); }));
 router.delete('/stores/:id', requirePermission('STORE_DELETE'), asyncRoute(async (req, res) => { const [payments] = await query<RowDataPacket & {
     count: number;
 }>('SELECT COUNT(*) count FROM vendor_payment_allocations a JOIN vendor_payments p ON p.id=a.vendor_payment_id AND p.is_deleted=0 WHERE a.store_entry_id=?', [req.params.id]); if (Number(payments.count) > 0) {
     res.status(409).json({ message: 'Store Entry cannot be deleted after payment generation' });
     return;
-} const result = await execute('UPDATE store_entries SET deleted_at=NOW(),deleted_by=? WHERE id=? AND company_id=? AND deleted_at IS NULL', [req.user!.id, req.params.id,req.user!.company_id]); if (!result.affectedRows) {
+} const oldBeforeDelete=await query<RowDataPacket & {branch_id:number;product_id:number}>('SELECT s.branch_id,d.product_id FROM store_entries s JOIN store_entry_details d ON d.store_entry_id=s.id AND d.is_deleted=0 WHERE s.id=? AND s.company_id=?',[req.params.id,req.user!.company_id]); await withTransaction(async(conn)=>{for(const row of oldBeforeDelete)await syncSourceQuantity(conn,{companyId:Number(req.user!.company_id),branchId:Number(row.branch_id),productId:Number(row.product_id),desiredQuantity:0,rate:0,sourceType:'STORE_ENTRY',sourceId:Number(req.params.id),referenceNo:String(req.params.id),userId:req.user!.id});}); const result = await execute('UPDATE store_entries SET deleted_at=NOW(),deleted_by=? WHERE id=? AND company_id=? AND deleted_at IS NULL', [req.user!.id, req.params.id,req.user!.company_id]); if (!result.affectedRows) {
     res.status(404).json({ message: 'Store Entry not found' });
     return;
-} res.json({ message: 'Store Entry deleted' }); }));
+} const old=await query<RowDataPacket & {branch_id:number;product_id:number;quantity:number}>('SELECT s.branch_id,d.product_id,d.quantity FROM store_entries s JOIN store_entry_details d ON d.store_entry_id=s.id AND d.is_deleted=0 WHERE s.id=? AND s.company_id=?',[req.params.id,req.user!.company_id]); await withTransaction(async(conn)=>{for(const row of old)await syncSourceQuantity(conn,{companyId:Number(req.user!.company_id),branchId:Number(row.branch_id),productId:Number(row.product_id),desiredQuantity:0,rate:0,sourceType:'STORE_ENTRY',sourceId:Number(req.params.id),referenceNo:String(req.params.id),userId:req.user!.id});}); res.json({ message: 'Store Entry deleted' }); }));
 async function insertDetail(conn: PoolConnection, storeId: number, row: CalculatedDetail, sort: number, userId: number,companyId:number) { await conn.execute('INSERT INTO store_entry_details(company_id,store_entry_id,product_id,product_code,product_name,part_number,hsn_code,quantity,rate,gst_percent,discount_percent,base_amount,discount_amount,taxable_amount,gst_amount,total_amount,sort_order,created_by,updated_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [companyId,storeId, row.product_id, row.product_code, row.product_name, row.part_number || null, row.hsn_code, row.quantity, row.rate, row.gst_percent, row.discount_percent, row.base_amount, row.discount_amount, row.taxable_amount, row.gst_amount, row.total_amount, sort, userId, userId]); }
+
+router.get('/inventory/availability', requirePermission('INVENTORY_VIEW'), asyncRoute(async (req,res)=>{
+  const branchId=inventoryBranch(req,Number(req.query.branch_id)||0),search=`%${String(req.query.search??'').trim()}%`,clauses=['p.company_id=?','p.status="active"'],params:unknown[]=[req.user!.company_id];
+  if(branchId&&!inventoryBranchAllowed(req,branchId)) { res.status(403).json({message:'You do not have access to this branch'}); return; }
+  if(branchId) { params.unshift(branchId); }
+  if(req.query.search) { clauses.push('(p.code LIKE ? OR p.name LIKE ? OR p.part_number LIKE ?)'); params.push(search,search,search); }
+  const rows=await query<RowDataPacket&Record<string,unknown>>(`SELECT p.id,p.code,p.name,p.part_number,p.reorder_level,u.code uom_code,COALESCE(SUM(ib.quantity),0) current_stock FROM products p JOIN uoms u ON u.id=p.uom_id LEFT JOIN inventory_balances ib ON ib.product_id=p.id AND ib.company_id=p.company_id ${branchId?'AND ib.branch_id=?':''} WHERE ${clauses.join(' AND ')} GROUP BY p.id,u.code ORDER BY p.name`,params);
+  res.json({data:rows});
+}));
+router.get('/inventory/ledger', requirePermission('INVENTORY_LEDGER_VIEW'), asyncRoute(async(req,res)=>{
+  const branchId=inventoryBranch(req,Number(req.query.branch_id)||0),search=`%${String(req.query.search??'')}%`,clauses=['l.company_id=?'],params:unknown[]=[req.user!.company_id];
+  if(branchId&&!inventoryBranchAllowed(req,branchId)) { res.status(403).json({message:'You do not have access to this branch'}); return; }
+  if(branchId){clauses.push('l.branch_id=?');params.push(branchId)}
+  else if(!['ADMIN','COMPANY_ADMIN','SUPER_ADMIN'].includes(String(req.user?.role))){clauses.push('1=0')}
+  if(req.query.from){clauses.push('DATE(l.created_at)>=?');params.push(String(req.query.from))} if(req.query.to){clauses.push('DATE(l.created_at)<=?');params.push(String(req.query.to))} if(req.query.search){clauses.push('(p.code LIKE ? OR p.name LIKE ? OR l.reference_no LIKE ? OR l.source_type LIKE ?)');params.push(search,search,search,search)}
+  const rows=await query<RowDataPacket&Record<string,unknown>>(`SELECT l.id,l.created_at,b.name branch_name,p.code product_code,p.name product_name,u.code uom_code,l.movement_type,l.quantity,l.rate,l.source_type,l.reference_no,l.remarks FROM stock_ledger l JOIN branches b ON b.id=l.branch_id JOIN products p ON p.id=l.product_id JOIN uoms u ON u.id=p.uom_id WHERE ${clauses.join(' AND ')} ORDER BY l.id DESC LIMIT 1000`,params);res.json({data:rows});
+}));
+router.get('/inventory/low-stock', requirePermission('INVENTORY_VIEW'), asyncRoute(async(req,res)=>{
+  const branchId=inventoryBranch(req,Number(req.query.branch_id)||0),search=`%${String(req.query.search??'').trim()}%`,clauses=['p.company_id=?','p.status="active"'],params:unknown[]=[req.user!.company_id];
+  if(branchId&&!inventoryBranchAllowed(req,branchId)) { res.status(403).json({message:'You do not have access to this branch'}); return; }
+  if(branchId) { params.unshift(branchId); }
+  if(req.query.search) { clauses.push('(p.code LIKE ? OR p.name LIKE ? OR p.part_number LIKE ?)'); params.push(search,search,search); }
+  const rows=await query<RowDataPacket&Record<string,unknown>>(`SELECT p.id,p.code,p.name,p.part_number,p.reorder_level,u.code uom_code,COALESCE(SUM(ib.quantity),0) current_stock FROM products p JOIN uoms u ON u.id=p.uom_id LEFT JOIN inventory_balances ib ON ib.product_id=p.id AND ib.company_id=p.company_id ${branchId?'AND ib.branch_id=?':''} WHERE ${clauses.join(' AND ')} GROUP BY p.id,u.code HAVING current_stock=0 OR (p.reorder_level>0 AND current_stock<=p.reorder_level) ORDER BY current_stock,p.name`,params);res.json({data:rows});
+}));
 const paymentSchema = z.object({ financial_year_id: id, payment_date: z.string().date(), vendor_id: id, remarks: z.string().trim().max(255).optional().nullable(), allocations: z.array(z.object({ store_entry_id: id, amount: z.coerce.number().positive() })).min(1) });
 router.get('/vendor-payments/credit-stores', requirePermission('VENDOR_PAYMENT_VIEW'), asyncRoute(async (req, res) => { const vendorId = Number(req.query.vendor_id), fy = Number(req.query.financial_year_id), scope=branchScope(req,'s'); if (!vendorId || !fy) {
     res.json({ data: [] });

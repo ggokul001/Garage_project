@@ -23,6 +23,10 @@ async function migrate() {
     if(dbError.code!=='ER_DBACCESS_DENIED_ERROR')throw error;
   }
   await connection.query(`USE ${mysql.escapeId(env.db.database)}`);
+  // Existing installations may have been created with MySQL's general
+  // collation while the current database default is unicode_ci. Keep schema
+  // seed comparisons compatible during upgrades.
+  await connection.query(`SET NAMES utf8mb4 COLLATE utf8mb4_general_ci`);
   await connection.query(sql);
   const uploadsRoot=path.resolve(env.uploadDir);
   const safeSegment=(value:unknown,fallback:string)=>String(value??'').trim().replace(/[^a-zA-Z0-9_-]+/g,'-').replace(/^-+|-+$/g,'')||fallback;

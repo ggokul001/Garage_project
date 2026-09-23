@@ -19,7 +19,7 @@ const permissionPrefix:Record<MasterSlug,string>={companies:'COMPANY',branches:'
 export function MasterPage(){
   const {slug:raw}=useParams(); const slug=raw as MasterSlug; const def=masterBySlug[slug]; const qc=useQueryClient();
   const has=useAuth(s=>s.has),user=useAuth(s=>s.user),prefix=permissionPrefix[slug],isCompanyProfile=slug==='companies';const canCreate=!isCompanyProfile&&has(`${prefix}_CREATE`),canUpdate=has(`${prefix}_UPDATE`),canDelete=!isCompanyProfile&&has(`${prefix}_DELETE`);
-  const canSelectBranch=['ADMIN','SUPER_ADMIN'].includes(String(user?.role_code??''));
+  const canSelectBranch=['ADMIN','COMPANY_ADMIN','SUPER_ADMIN'].includes(String(user?.role_code??''));
   const {page,pageSize,search,setPage,setPageSize,setSearch}=useListQueryState();
   const [formOpen,setFormOpen]=useState(false),[editing,setEditing]=useState<RecordData|null>(null),[viewing,setViewing]=useState<RecordData|null>(null),[searchText,setSearchText]=useState(search);
   const [form,setForm]=useState<Record<string,unknown>>({});

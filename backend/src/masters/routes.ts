@@ -8,6 +8,7 @@ import path from 'node:path';
 import multer from 'multer';
 import {env} from '../config/env';
 import {companyStorage,isInsideUploads} from '../utils/uploadStorage';
+import { isCompanyWideRole } from '../security/branchAccess';
 
 const router = Router();
 const isMaster = (value: string): value is MasterName => value in masterConfigs;
@@ -33,10 +34,22 @@ const branchScopedMasters = new Set<MasterName>(['branches','employees','custome
 const branchScope = (req: Request, master: MasterName, alias = 'm') => {
   const selected = Number(req.query.branch_id) || 0;
   const branchColumn = master === 'branches' ? `${alias}.id` : `${alias}.branch_id`;
-  if (selected && branchScopedMasters.has(master) && !['SUPER_ADMIN'].includes(String(req.user?.role)) && !(req.user?.role === 'ADMIN' && !(req.user?.branch_ids ?? []).length)) return (req.user?.branch_ids ?? []).includes(selected) ? { sql: ` AND ${branchColumn}=?`, params: [selected] } : { sql: ' AND 1=0', params: [] as number[] };
-  if (!branchScopedMasters.has(master) || ['SUPER_ADMIN'].includes(String(req.user?.role)) || (req.user?.role === 'ADMIN' && !(req.user?.branch_ids ?? []).length)) return selected ? { sql: ` AND ${branchColumn}=?`, params: [selected] } : { sql: '', params: [] as number[] };
+  if (selected && branchScopedMasters.has(master) && !isCompanyWideRole(req.user?.role, req.user?.branch_ids ?? [])) return (req.user?.branch_ids ?? []).includes(selected) ? { sql: ` AND ${branchColumn}=?`, params: [selected] } : { sql: ' AND 1=0', params: [] as number[] };
+  if (!branchScopedMasters.has(master) || isCompanyWideRole(req.user?.role, req.user?.branch_ids ?? [])) return selected ? { sql: ` AND ${branchColumn}=?`, params: [selected] } : { sql: '', params: [] as number[] };
   const ids = req.user?.branch_ids ?? [];
   return ids.length ? { sql: ` AND ${branchColumn} IN (${ids.map(() => '?').join(',')})`, params: ids } : { sql: ' AND 1=0', params: [] as number[] };
+};
+const productBranchScope = (req: Request, master: MasterName, alias = 'm') => {
+  if (master !== 'products' || isCompanyWideRole(req.user?.role, req.user?.branch_ids ?? [])) return '';
+  const ids = [...(req.user?.branch_ids ?? []), Number(req.user?.branch_id ?? 0)].filter(Boolean);
+  return ids.length
+    ? ` AND EXISTS (SELECT 1 FROM inventory_balances ib_scope WHERE ib_scope.company_id=${alias}.company_id AND ib_scope.product_id=${alias}.id AND ib_scope.branch_id IN (${ids.join(',')}))`
+    : ' AND 1=0';
+};
+const productSelect = (req: Request, master: MasterName, cfg: MasterConfig) => {
+  if (master !== 'products' || isCompanyWideRole(req.user?.role, req.user?.branch_ids ?? [])) return cfg.select;
+  const ids = [...(req.user?.branch_ids ?? []), Number(req.user?.branch_id ?? 0)].filter(Boolean);
+  return cfg.select.replace('AND ib.product_id=m.id),0)', `AND ib.product_id=m.id AND ib.branch_id IN (${ids.join(',')})),0)`);
 };
 
 const companyLogoUpload=multer({storage:companyStorage('company-profile',req=>Number(req.user?.company_id)),limits:{fileSize:env.maxUploadSizeMb*1024*1024,files:1},fileFilter:(_req,file,callback)=>['image/jpeg','image/png','image/webp'].includes(file.mimetype)?callback(null,true):callback(new Error('Company logo must be JPG, PNG or WEBP'))}).single('logo');
@@ -58,9 +71,9 @@ router.param('master', (req, res, next, value) => {
 router.get('/:master/options', asyncRoute(async (req, res) => {
   const master=req.params.master as MasterName,cfg: MasterConfig = masterConfigs[master];
   if(master==='companies'){res.json({data:req.user!.company_id?await query('SELECT * FROM companies WHERE id=?',[req.user!.company_id]):[]});return}
-  const scope=branchScope(req,master);
+  const scope=branchScope(req,master),productScope=productBranchScope(req,master);
   const rows = await query<RowDataPacket & Record<string, unknown>>(
-    `SELECT ${cfg.select} FROM ${cfg.table} m ${cfg.joins ?? ''} WHERE m.company_id=?${scope.sql} AND m.status='active' ORDER BY ${cfg.orderBy ?? 'm.id'} LIMIT 1000`,[req.user!.company_id,...scope.params]
+    `SELECT ${productSelect(req,master,cfg)} FROM ${cfg.table} m ${cfg.joins ?? ''} WHERE m.company_id=?${scope.sql}${productScope} AND m.status='active' ORDER BY ${cfg.orderBy ?? 'm.id'} LIMIT 1000`,[req.user!.company_id,...scope.params]
   );
   res.json({ data: rows });
 }));
@@ -75,7 +88,7 @@ router.get('/:master', requireMasterAction('VIEW'), asyncRoute(async (req, res) 
     clauses.push('m.id=?');params.push(req.user!.company_id);
   } else if(tenantMaster(master)){
     clauses.push('m.company_id=?');params.push(req.user!.company_id);
-    const scope=branchScope(req,master);if(scope.sql)clauses.push(scope.sql.replace(/^ AND /,''));params.push(...scope.params)
+    const scope=branchScope(req,master);if(scope.sql)clauses.push(scope.sql.replace(/^ AND /,''));const productScope=productBranchScope(req,master);if(productScope)clauses.push(productScope.replace(/^ AND /,''));params.push(...scope.params)
   }
   if(search){clauses.push(`(${cfg.search.map((column) => `${column} LIKE ?`).join(' OR ')})`);params.push(...cfg.search.map(() => `%${search}%`))}
   const where=clauses.length?`WHERE ${clauses.join(' AND ')}`:'';
@@ -84,7 +97,7 @@ router.get('/:master', requireMasterAction('VIEW'), asyncRoute(async (req, res) 
     params
   );
   const rows = await query<RowDataPacket & Record<string, unknown>>(
-    `SELECT ${cfg.select} FROM ${cfg.table} m ${cfg.joins ?? ''} ${where} ORDER BY ${cfg.orderBy ?? 'm.id'} LIMIT ? OFFSET ?`,
+    `SELECT ${productSelect(req,master,cfg)} FROM ${cfg.table} m ${cfg.joins ?? ''} ${where} ORDER BY ${cfg.orderBy ?? 'm.id'} LIMIT ? OFFSET ?`,
     [...params, pageSize, (page - 1) * pageSize]
   );
   res.json({ data: rows, meta: { page, pageSize, total: Number(count[0]?.total ?? 0) } });
@@ -106,7 +119,7 @@ router.post('/:master', requireMasterAction('CREATE'), asyncRoute(async (req, re
   if(master==='companies'){res.status(403).json({message:'Use Super Administrator company management'});return}
   if(master==='branches'){const limits=await query<RowDataPacket&{max_branches:number|null;used:number}>('SELECT c.max_branches,(SELECT COUNT(*) FROM branches WHERE company_id=c.id) used FROM companies c WHERE c.id=?',[req.user!.company_id]);if(limits[0]?.max_branches&&Number(limits[0].used)>=Number(limits[0].max_branches)){res.status(409).json({message:'Company branch limit reached'});return}}
   const prefix=codePrefix[master];
-  const autoBranch = branchScopedMasters.has(master) && !['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role)) ? { branch_id: req.user?.branch_ids?.[0] ?? req.user?.branch_id ?? req.body.branch_id } : {};
+  const autoBranch = branchScopedMasters.has(master) && !isCompanyWideRole(req.user?.role, req.user?.branch_ids ?? []) ? { branch_id: req.user?.branch_ids?.[0] ?? req.user?.branch_id ?? req.body.branch_id } : {};
   const tenantBody={...req.body,...autoBranch,...(['branches','departments'].includes(master)?{company_id:req.user!.company_id}:{})};
   const preview=cfg.schema.safeParse({...tenantBody,...(prefix&&cfg.columns.includes('code')?{code:`${prefix}-00000`}:{})});
   if(!preview.success){res.status(422).json({message:preview.error.issues[0]?.message,errors:preview.error.flatten().fieldErrors});return}
@@ -151,7 +164,7 @@ router.put('/:master/:id', requireMasterAction('UPDATE'), asyncRoute(async (req,
   const scope=branchScope(req,master); const before=await query<RowDataPacket&Record<string,unknown>>(`SELECT m.* FROM ${cfg.table} m WHERE m.id=? AND m.company_id=?${scope.sql}`,[req.params.id,req.user!.company_id,...scope.params]);
   if(!before[0]){res.status(404).json({message:'Record not found'});return}
   res.locals.auditBefore=before[0];
-  const parsed = cfg.schema.safeParse({...req.body,...(branchScopedMasters.has(master)&&!['ADMIN','SUPER_ADMIN'].includes(String(req.user?.role))?{branch_id:before[0].branch_id}:{ }),...(['branches','departments'].includes(master)?{company_id:req.user!.company_id}:{}),...(cfg.columns.includes('code')?{code:before[0].code}:{})});
+  const parsed = cfg.schema.safeParse({...req.body,...(branchScopedMasters.has(master)&&!isCompanyWideRole(req.user?.role, req.user?.branch_ids ?? [])?{branch_id:before[0].branch_id}:{ }),...(['branches','departments'].includes(master)?{company_id:req.user!.company_id}:{}),...(cfg.columns.includes('code')?{code:before[0].code}:{})});
   if (!parsed.success) { res.status(422).json({ message: parsed.error.issues[0]?.message, errors: parsed.error.flatten().fieldErrors }); return; }
   const data = parsed.data as Record<string, unknown>;
   await validateLinks(master,data,Number(req.user!.company_id));
