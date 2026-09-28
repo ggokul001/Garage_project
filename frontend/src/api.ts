@@ -114,7 +114,7 @@ export const superAdminPaymentApi={
 
 export const transactionApi={
   financialYears:async()=>(await client.get('/financial-years')).data.data as RecordData[],
-  autocomplete:async(type:'vehicles'|'customers'|'vendors'|'employees'|'products'|'pending-statuses',search:string,branchId?:number|string)=>{const workOrderId=type==='products'?window.location.pathname.match(/^\/work-orders\/(\d+)/)?.[1]:undefined;return(await client.get(`/lookups/${type}`,{params:{search,branch_id:branchId||undefined,work_order_id:workOrderId}})).data.data as RecordData[]},
+  autocomplete:async(type:'vehicles'|'customers'|'vendors'|'employees'|'products'|'pending-statuses',search:string,branchId?:number|string,productTypes?:string[])=>{const workOrderId=type==='products'?window.location.pathname.match(/^\/work-orders\/(\d+)/)?.[1]:undefined;return(await client.get(`/lookups/${type}`,{params:{search,branch_id:branchId||undefined,work_order_id:workOrderId,product_types:type==='products'&&productTypes?.length?productTypes.join(','):undefined}})).data.data as RecordData[]},
   jobCards:async(params:Record<string,unknown>)=>(await client.get('/job-cards',{params})).data,
   jobCard:async(id:number)=>(await client.get(`/job-cards/${id}`)).data.data,
   createJobCardShare:async(id:number)=>(await client.post(`/job-cards/${id}/share-link`)).data.data as {token:string;expires_in_days:number},

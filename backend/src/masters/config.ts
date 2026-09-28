@@ -105,9 +105,9 @@ const configs = {
     columns: ['code','name','description','status'], search: ['m.code','m.name'], select: 'm.*', orderBy: 'm.name',
   },
   products: {
-    table: 'products', schema: z.object({ code: requiredText('Code',30), name: requiredText('Name'), part_number: optionalText,
+    table: 'products', schema: z.object({ code: requiredText('Code',30), name: requiredText('Name'), product_type: z.enum(['SPARE','TOOL','BATTERY','TYRE']).default('SPARE'), part_number: optionalText,
       hsn_code: requiredText('HSN code',20), uom_id: id, default_rate: amount, reorder_level: amount, status }),
-    columns: ['code','name','part_number','hsn_code','uom_id','default_rate','reorder_level','status'], search: ['m.code','m.name','m.part_number','m.hsn_code'],
+    columns: ['code','name','product_type','part_number','hsn_code','uom_id','default_rate','reorder_level','status'], search: ['m.code','m.name','m.product_type','m.part_number','m.hsn_code'],
     select: 'm.*, u.code AS uom_code, u.name AS uom_name, COALESCE((SELECT SUM(ib.quantity) FROM inventory_balances ib WHERE ib.company_id=m.company_id AND ib.product_id=m.id),0) AS current_stock', joins: 'LEFT JOIN uoms u ON u.id=m.uom_id', orderBy: 'm.name',
   },
   'work-pending-sub-statuses': {

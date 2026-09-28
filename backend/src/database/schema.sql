@@ -337,6 +337,7 @@ CREATE TABLE IF NOT EXISTS products (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   code VARCHAR(30) NOT NULL UNIQUE,
   name VARCHAR(150) NOT NULL,
+  product_type ENUM('SPARE','TOOL','BATTERY','TYRE') NOT NULL DEFAULT 'SPARE',
   part_number VARCHAR(80) NULL,
   hsn_code VARCHAR(20) NOT NULL,
   uom_id BIGINT UNSIGNED NOT NULL,
@@ -423,6 +424,8 @@ CREATE TABLE IF NOT EXISTS job_card_complaints (
   deleted_by BIGINT UNSIGNED NULL,
   CONSTRAINT fk_job_complaint_job FOREIGN KEY (job_card_id) REFERENCES job_cards(id)
 ) ENGINE=InnoDB;
+
+ALTER TABLE products ADD COLUMN IF NOT EXISTS product_type ENUM('SPARE','TOOL','BATTERY','TYRE') NOT NULL DEFAULT 'SPARE' AFTER name;
 
 CREATE TABLE IF NOT EXISTS job_card_share_links (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -704,9 +707,12 @@ CREATE TABLE IF NOT EXISTS store_entries (
   deleted_by BIGINT UNSIGNED NULL,
   UNIQUE KEY uq_store_no_fy (store_no,financial_year_id),
   KEY ix_store_vendor_date (vendor_id,entry_date),
+  KEY ix_store_duplicate_bill (company_id,branch_id,vendor_id,bill_no),
   CONSTRAINT fk_store_fy FOREIGN KEY (financial_year_id) REFERENCES financial_years(id),
   CONSTRAINT fk_store_vendor FOREIGN KEY (vendor_id) REFERENCES vendors(id)
 ) ENGINE=InnoDB;
+
+ALTER TABLE store_entries ADD INDEX IF NOT EXISTS ix_store_duplicate_bill (company_id,branch_id,vendor_id,bill_no);
 
 CREATE TABLE IF NOT EXISTS store_entry_details (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
